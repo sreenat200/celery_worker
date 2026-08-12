@@ -697,14 +697,14 @@ def delete_store_account(self, store_id, user_id):
             "DELETE FROM store_user WHERE store_id = %s",
             "DELETE FROM store WHERE id = %s",
             
-            "DELETE FROM \"user\" WHERE id = %s AND NOT EXISTS (SELECT 1 FROM store_user WHERE user_id = %s)"
+            "DELETE FROM \"user\" WHERE id = %s AND store_id = %s"
         ]
         
         for q in queries:
             try:
                 cur.execute("SAVEPOINT batch_savepoint")
                 if q.startswith("DELETE FROM \"user\""):
-                    cur.execute(q, (user_id, user_id))
+                    cur.execute(q, (user_id, store_id))
                 else:
                     cur.execute(q, (store_id,))
                 cur.execute("RELEASE SAVEPOINT batch_savepoint")
