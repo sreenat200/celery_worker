@@ -635,6 +635,7 @@ def delete_store_account(self, store_id, user_id):
         queries = [
             "DELETE FROM order_item WHERE order_id IN (SELECT id FROM \"order\" WHERE store_id = %s)",
             "DELETE FROM payment WHERE order_id IN (SELECT id FROM \"order\" WHERE store_id = %s)",
+            "DELETE FROM payment_log WHERE order_id IN (SELECT id FROM \"order\" WHERE store_id = %s)",
             "DELETE FROM shipment WHERE store_id = %s",
             "DELETE FROM \"order\" WHERE store_id = %s",
             
@@ -662,6 +663,7 @@ def delete_store_account(self, store_id, user_id):
             "DELETE FROM store_notification WHERE store_id = %s",
             
             "DELETE FROM page WHERE store_id = %s",
+            "DELETE FROM home_page_section WHERE store_id = %s",
             "DELETE FROM instagram_config WHERE store_id = %s",
             "DELETE FROM shiprocket_config WHERE store_id = %s",
             "DELETE FROM whatsapp_config WHERE store_id = %s",
