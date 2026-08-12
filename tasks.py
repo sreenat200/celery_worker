@@ -697,9 +697,8 @@ def delete_store_account(self, store_id, user_id):
             "DELETE FROM domain WHERE store_id = %s",
             
             "DELETE FROM store_user WHERE store_id = %s",
-            "DELETE FROM store WHERE id = %s",
-            
-            "DELETE FROM \"user\" WHERE id = %s AND store_id = %s"
+            "DELETE FROM \"user\" WHERE id = %s AND store_id = %s",
+            "DELETE FROM store WHERE id = %s"
         ]
         
         for q in queries:
