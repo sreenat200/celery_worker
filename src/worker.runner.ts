@@ -12,6 +12,7 @@ import {
   type ProcessFrameZipJob,
   type ProcessImageJob,
   type SeedStoreJob,
+  type AbandonedCheckoutJob,
   type SendEmailJob,
   type SendOtpEmailJob,
 } from './jobs/bullmq.constants';
@@ -112,6 +113,10 @@ export class WorkerRunner implements OnModuleInit, OnModuleDestroy {
         const d = job.data as SeedStoreJob;
         return seedDefaultStoreData(this.prisma, this.storage, d.storeId);
       }
+      case BULLMQ_JOB.ABANDONED_CHECKOUT: {
+        const d = job.data as AbandonedCheckoutJob;
+        return this.sendAbandoned(d);
+      }
       default:
         throw new Error(`Unknown job name: ${job.name}`);
     }
@@ -133,6 +138,24 @@ export class WorkerRunner implements OnModuleInit, OnModuleDestroy {
       html,
     });
     return { status: 'success', to: data.to, store_id: data.storeId ?? null };
+  }
+
+  private async sendAbandoned(data: AbandonedCheckoutJob) {
+    const settings = await this.prisma.site_settings.findFirst({
+      where: { store_id: data.storeId },
+      select: { notification_settings: true, site_name: true },
+    });
+    const n = settings?.notification_settings as any;
+    if (n && n.abandoned_checkout !== true) {
+      return { status: 'skipped', reason: 'disabled' };
+    }
+    const storeName = settings?.site_name || 'our store';
+    await this.mailer.sendMail({
+      to: data.email,
+      subject: `You left items in your cart at ${storeName}`,
+      html: `<p>Hi${data.name ? ` ${data.name}` : ''},</p><p>You left items in your cart at <strong>${storeName}</strong>. Come back to finish checkout whenever you're ready.</p>`,
+    });
+    return { status: 'sent', to: data.email };
   }
 
   private async sendEmail(data: SendEmailJob) {

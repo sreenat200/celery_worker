@@ -9,6 +9,7 @@ export const BULLMQ_JOB = {
   SEND_EMAIL: 'send_email',
   DELETE_STORE_ACCOUNT: 'delete_store_account',
   SEED_DEFAULT_STORE_DATA: 'seed_default_store_data',
+  ABANDONED_CHECKOUT: 'abandoned_checkout',
 } as const;
 
 export type BullmqJobName = (typeof BULLMQ_JOB)[keyof typeof BULLMQ_JOB];
@@ -52,4 +53,10 @@ export interface DeleteStoreAccountJob {
 
 export interface SeedStoreJob {
   storeId: number;
+}
+
+export interface AbandonedCheckoutJob {
+  storeId: number;
+  email: string;
+  name?: string;
 }
