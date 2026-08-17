@@ -1,0 +1,40 @@
+{
+  "name": "media-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BullMQ worker service for media, email, and store jobs",
+  "scripts": {
+    "build": "npx prisma generate && tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "start:prod": "node dist/main.js",
+    "start:dev": "ts-node src/main.ts",
+    "postinstall": "prisma generate || true"
+  },
+  "dependencies": {
+    "@nestjs-modules/mailer": "^2.3.7",
+    "@nestjs/common": "^11.0.1",
+    "@nestjs/config": "^4.0.4",
+    "@nestjs/core": "^11.0.1",
+    "@prisma/adapter-pg": "^7.9.1",
+    "@prisma/client": "^7.9.1",
+    "@aws-sdk/client-s3": "^3.1105.0",
+    "@aws-sdk/s3-request-presigner": "^3.1105.0",
+    "adm-zip": "^0.5.16",
+    "bullmq": "^5.58.0",
+    "dotenv": "^16.4.5",
+    "nodemailer": "^9.0.4",
+    "pg": "^8.16.0",
+    "prisma": "^7.9.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "sharp": "^0.34.2"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
+    "@types/node": "^22.15.0",
+    "@types/nodemailer": "^6.4.17",
+    "@types/pg": "^8.15.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  }
+}

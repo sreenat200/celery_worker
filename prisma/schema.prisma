@@ -1,0 +1,1146 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model account_deletion_task {
+  id               Int       @id @default(autoincrement())
+  task_id          String    @unique @db.VarChar(100)
+  store_id         Int
+  user_id          Int
+  status           String?   @db.VarChar(30)
+  progress_percent Int?
+  current_step     String?   @db.VarChar(255)
+  error_message    String?
+  created_at       DateTime? @db.Timestamp(6)
+  completed_at     DateTime? @db.Timestamp(6)
+}
+
+model collection {
+  id                  Int                   @id @default(autoincrement())
+  name                String                @db.VarChar(255)
+  description         String?
+  image_url           String?
+  banner_image_url    String?
+  media_id            Int?
+  banner_media_id     Int?
+  handle              String?               @db.VarChar(255)
+  collection_type     String?               @db.VarChar(50)
+  rules               Json?
+  seo_title           String?               @db.VarChar(255)
+  seo_description     String?
+  sales_channels      Json?
+  published_at        DateTime?             @db.Timestamp(6)
+  status              String?               @db.VarChar(50)
+  is_active           Boolean?
+  created_at          DateTime?             @db.Timestamp(6)
+  display_order       Int?
+  display_style       String?               @db.VarChar(50)
+  store_id            Int?
+  banner_media_asset  media_asset?          @relation("CollectionBannerMedia", fields: [banner_media_id], references: [id], onUpdate: NoAction)
+  media_asset         media_asset?          @relation("CollectionMedia", fields: [media_id], references: [id], onUpdate: NoAction)
+  store               store?                @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  product_collections product_collections[]
+
+  @@unique([store_id, handle], map: "_store_collection_handle_uc")
+  @@index([store_id], map: "ix_collection_store_id")
+  @@index([store_id, status], map: "idx_collection_store_status")
+  @@index([store_id, created_at], map: "idx_collection_store_created")
+  @@index([media_id], map: "ix_collection_media_id")
+  @@index([banner_media_id], map: "ix_collection_banner_media_id")
+}
+
+model inbox_conversation {
+  id             Int             @id @default(autoincrement())
+  store_id       Int
+  customer_id    Int?
+  customer_name  String          @db.VarChar(100)
+  customer_email String          @db.VarChar(120)
+  customer_phone String?         @db.VarChar(20)
+  subject        String          @db.VarChar(255)
+  status         String          @default("open") @db.VarChar(20)
+  assigned_to    Int?
+  is_starred     Boolean?        @default(false)
+  is_read        Boolean?        @default(false)
+  is_archived    Boolean?        @default(false)
+  created_at     DateTime?       @default(now()) @db.Timestamp(6)
+  updated_at     DateTime?       @default(now()) @db.Timestamp(6)
+  customer       customer?       @relation(fields: [customer_id], references: [id])
+  store          store           @relation(fields: [store_id], references: [id], onDelete: Cascade)
+  inbox_message  inbox_message[]
+
+  @@index([store_id], map: "ix_inbox_conv_store_id")
+  @@index([store_id, status], map: "ix_inbox_conv_status")
+  @@index([customer_id], map: "ix_inbox_conv_customer_id")
+}
+
+model inbox_message {
+  id               Int                @id @default(autoincrement())
+  conversation_id  Int
+  sender_type      String             @db.VarChar(20)
+  sender_id        Int?
+  message          String
+  is_internal_note Boolean?           @default(false)
+  attachments      Json?
+  created_at       DateTime?          @default(now()) @db.Timestamp(6)
+  conversation     inbox_conversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+
+  @@index([conversation_id], map: "ix_inbox_msg_conv_id")
+}
+
+model customer {
+  id                  Int                  @id @default(autoincrement())
+  store_id            Int
+  first_name          String?              @db.VarChar(100)
+  last_name           String?              @db.VarChar(100)
+  email               String               @db.VarChar(120)
+  phone               String?              @db.VarChar(20)
+  status              String?              @default("active") @db.VarChar(20)
+  tags                Json?
+  notes               String?
+  total_spent         Float                @default(0)
+  orders_count        Int                  @default(0)
+  addresses           Json?
+  created_at          DateTime?            @default(now()) @db.Timestamp(6)
+  updated_at          DateTime?            @default(now()) @db.Timestamp(6)
+  store               store                @relation(fields: [store_id], references: [id], onDelete: Cascade)
+  inbox_conversations inbox_conversation[]
+
+  @@unique([store_id, email], map: "_store_customer_email_uc")
+  @@index([store_id], map: "ix_customer_store_id")
+  @@index([store_id, status], map: "ix_customer_status")
+  @@index([store_id, created_at], map: "idx_customer_store_created")
+}
+
+model coupon {
+  id              Int            @id @default(autoincrement())
+  store_id        Int
+  code            String         @db.VarChar(50)
+  discount_type   String?        @db.VarChar(20)
+  value           Float
+  min_order_value Float?
+  usage_limit     Int?
+  usage_per_user  Int?
+  usage_count     Int?
+  applies_to      String?        @db.VarChar(20)
+  product_ids     String?
+  collection_ids  String?
+  expires_at      DateTime?      @db.Timestamp(6)
+  is_active       Boolean?
+  created_at      DateTime?      @db.Timestamp(6)
+  store           store          @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  coupon_usage    coupon_usage[]
+
+  @@unique([store_id, code], map: "_store_coupon_code_uc")
+}
+
+model coupon_usage {
+  id        Int       @id @default(autoincrement())
+  coupon_id Int
+  user_id   Int?
+  order_id  Int?
+  used_at   DateTime? @db.Timestamp(6)
+  coupon    coupon    @relation(fields: [coupon_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  order     order?    @relation(fields: [order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user      user?     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([coupon_id], map: "ix_coupon_usage_coupon_id")
+  @@index([order_id], map: "ix_coupon_usage_order_id")
+  @@index([user_id], map: "ix_coupon_usage_user_id")
+}
+
+model discount {
+  id              Int       @id @default(autoincrement())
+  store_id        Int
+  name            String    @db.VarChar(150)
+  code            String?   @db.VarChar(50)
+  discount_type   String?   @db.VarChar(20)
+  value           Float
+  min_order_value Float?
+  applies_to      String?   @db.VarChar(20)
+  product_ids     String?
+  collection_ids  String?
+  starts_at       DateTime? @db.Timestamp(6)
+  ends_at         DateTime? @db.Timestamp(6)
+  is_active       Boolean?
+  usage_limit     Int?
+  usage_count     Int?
+  created_at      DateTime? @db.Timestamp(6)
+  store           store     @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([store_id, is_active], map: "idx_discount_store_active")
+  @@index([store_id], map: "ix_discount_store_id")
+}
+
+model domain {
+  id                  Int       @id @default(autoincrement())
+  domain_name         String    @unique @db.VarChar(100)
+  is_primary          Boolean?
+  is_verified         Boolean?
+  verification_token  String?   @db.VarChar(100)
+  dns_record_type     String?   @db.VarChar(10)
+  dns_target          String?   @db.VarChar(200)
+  ssl_status          String?   @db.VarChar(20)
+  verified_at         DateTime? @db.Timestamp(6)
+  created_at          DateTime? @db.Timestamp(6)
+  domain_type         String?   @db.VarChar(50)
+  verification_status String?   @db.VarChar(20)
+  ssl_issued_at       DateTime? @db.Timestamp(6)
+  last_checked_at     DateTime? @db.Timestamp(6)
+  cf_hostname_id      String?   @db.VarChar(100)
+  store_id            Int?
+  normalized_domain   String?   @unique @db.VarChar(100)
+  updated_at          DateTime? @db.Timestamp(6)
+  verification_method String?   @db.VarChar(20)
+  store               store?    @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([store_id], map: "ix_domain_store_id")
+}
+
+model email_campaign {
+  id              Int       @id @default(autoincrement())
+  store_id        Int
+  name            String    @db.VarChar(200)
+  subject         String    @db.VarChar(300)
+  body_html       String?
+  audience        String?   @db.VarChar(50)
+  status          String?   @db.VarChar(30)
+  scheduled_at    DateTime? @db.Timestamp(6)
+  sent_at         DateTime? @db.Timestamp(6)
+  created_at      DateTime? @db.Timestamp(6)
+  recipient_count Int?
+  delivered_count Int?
+  opened_count    Int?
+  clicked_count   Int?
+  failed_count    Int?
+  store           store     @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([store_id], map: "ix_email_campaign_store_id")
+}
+
+model hero_slide {
+  id            Int      @id @default(autoincrement())
+  image_url     String?  @db.VarChar(200)
+  title         String?  @db.VarChar(100)
+  subtitle      String?  @db.VarChar(200)
+  button_text   String?  @db.VarChar(50)
+  button_link   String?  @db.VarChar(200)
+  display_order Int?
+  is_active     Boolean?
+}
+
+model home_page_section {
+  id            Int       @id @default(autoincrement())
+  page_type     String    @db.VarChar(50)
+  section_type  String    @db.VarChar(50)
+  title         String?   @db.VarChar(100)
+  subtitle      String?   @db.VarChar(200)
+  content       Json?     @db.Json
+  display_order Int?
+  is_active     Boolean?
+  created_at    DateTime? @db.Timestamp(6)
+  store_id      Int?
+  store         store?    @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([store_id, page_type, is_active], map: "idx_sec_store_page_active")
+  @@index([store_id], map: "ix_home_page_section_store_id")
+}
+
+model instagram_config {
+  id                Int       @id @default(autoincrement())
+  store_id          Int       @unique
+  access_token      String?
+  instagram_user_id String?   @db.VarChar(100)
+  username          String?   @db.VarChar(100)
+  profile_pic_url   String?   @db.VarChar(500)
+  followers_count   Int?
+  bio               String?
+  website           String?   @db.VarChar(300)
+  posts_json        String?
+  posts_count       Int?
+  is_connected      Boolean?
+  is_enabled        Boolean?
+  connected_at      DateTime? @db.Timestamp(6)
+  last_sync_at      DateTime? @db.Timestamp(6)
+  sync_error        String?
+  store             store     @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model media_asset {
+  id                      Int                  @id @default(autoincrement())
+  store_id                Int?
+  file_name               String?              @db.VarChar(255)
+  mime_type               String?              @db.VarChar(100)
+  file_size               Int?
+  width                   Int?
+  height                  Int?
+  r2_object_key           String?              @db.VarChar(500)
+  bucket_name             String?              @db.VarChar(200)
+  thumbnail_keys          Json?                @db.Json
+  responsive_keys         Json?                @db.Json
+  uploaded_by             Int?
+  alt_text                String?              @db.VarChar(255)
+  tags                    Json?                @db.Json
+  status                  String?              @db.VarChar(20)
+  is_orphan               Boolean?
+  last_scanned_at         DateTime?            @db.Timestamp(6)
+  created_at              DateTime?            @db.Timestamp(6)
+  original_url            String?              @db.VarChar(500)
+  compressed_url          String?              @db.VarChar(500)
+  webp_url                String?              @db.VarChar(500)
+  thumbnail_url           String?              @db.VarChar(500)
+  file_type               String?              @db.VarChar(20)
+  original_size           Int?
+  optimized_size          Int?
+  is_common_asset         Boolean?             @default(false)
+  error_message           String?
+  r2_large_key            String?              @db.VarChar(500)
+  r2_medium_key           String?              @db.VarChar(500)
+  r2_optimized_key        String?              @db.VarChar(500)
+  r2_thumbnail_key        String?              @db.VarChar(500)
+  updated_at              DateTime?            @db.Timestamp(6)
+  duration                Float?
+  poster_url              String?              @db.VarChar(500)
+  attribution_text        String?              @db.VarChar(2000)
+  author_name             String?              @db.VarChar(255)
+  author_url              String?              @db.VarChar(2000)
+  license                 String?              @db.VarChar(200)
+  provider                String?              @db.VarChar(20)
+  provider_asset_id       String?              @db.VarChar(200)
+  source_url              String?              @db.VarChar(2000)
+  collection_banner_media collection[]         @relation("CollectionBannerMedia")
+  collection_media        collection[]         @relation("CollectionMedia")
+  common_theme_assets     common_theme_asset[]
+  store                   store?               @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  media_tasks             media_task[]
+  product_media           product[]            @relation("ProductMedia")
+  product_image_media     product_image[]      @relation("ProductImageMedia")
+  site_settings_logo      site_settings[]      @relation("SiteSettingsLogo")
+  site_settings_favicon   site_settings[]      @relation("SiteSettingsFavicon")
+
+  @@index([store_id, file_type], map: "idx_media_store_type")
+  @@index([original_url], map: "ix_media_asset_original_url")
+  @@index([store_id], map: "ix_media_asset_store_id")
+  @@index([store_id, provider, provider_asset_id], map: "ix_media_asset_provider_asset")
+  @@index([status], map: "ix_media_asset_status")
+  @@index([store_id, status], map: "ix_media_asset_store_status")
+  @@index([store_id, created_at], map: "idx_media_asset_store_created")
+  @@index([is_common_asset], map: "ix_media_asset_is_common")
+}
+
+model media_task {
+  id             Int          @id @default(autoincrement())
+  store_id       Int?
+  task_type      String       @db.VarChar(50)
+  celery_task_id String?      @db.VarChar(200)
+  status         String?      @db.VarChar(20)
+  result         String?
+  started_at     DateTime?    @db.Timestamp(6)
+  completed_at   DateTime?    @db.Timestamp(6)
+  error_message  String?
+  media_id       Int?
+  updated_at     DateTime?    @db.Timestamp(6)
+  media_asset    media_asset? @relation(fields: [media_id], references: [id], onUpdate: NoAction)
+  store          store?       @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([store_id], map: "ix_media_task_store_id")
+  @@index([media_id], map: "ix_media_task_media_id")
+  @@index([status], map: "ix_media_task_status")
+}
+
+model navigation_item {
+  id            Int      @id @default(autoincrement())
+  label         String   @db.VarChar(50)
+  url           String   @db.VarChar(200)
+  display_order Int?
+  is_active     Boolean?
+}
+
+model newsletter {
+  id         Int       @id @default(autoincrement())
+  email      String    @db.VarChar(120)
+  store_id   Int
+  created_at DateTime? @db.Timestamp(6)
+  store      store     @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([email, store_id], map: "_store_newsletter_uc")
+  @@index([store_id], map: "idx_newsletter_store_id")
+}
+
+model order {
+  id               Int            @id @default(autoincrement())
+  user_id          Int?
+  total_price      Float
+  status           String         @db.VarChar(20)
+  shipping_address String?
+  city             String?        @db.VarChar(50)
+  state            String?        @db.VarChar(50)
+  country          String?        @db.VarChar(50)
+  pincode          String?        @db.VarChar(10)
+  mobile           String?        @db.VarChar(20)
+  created_at       DateTime       @db.Timestamp(6)
+  store_id         Int?
+  coupon_usage     coupon_usage[]
+  store            store?         @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user             user?          @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  order_item       order_item[]
+  payment          payment[]
+  payment_log      payment_log[]
+  shipment         shipment[]
+
+  @@index([store_id, created_at], map: "idx_order_store_created")
+  @@index([store_id, status], map: "idx_order_store_status")
+  @@index([store_id], map: "ix_order_store_id")
+  @@index([user_id], map: "ix_order_user_id")
+}
+
+model order_item {
+  id         Int     @id @default(autoincrement())
+  order_id   Int
+  product_id Int
+  quantity   Int
+  order      order   @relation(fields: [order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  product    product @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([order_id], map: "ix_order_item_order_id")
+  @@index([product_id], map: "ix_order_item_product_id")
+}
+
+model page {
+  id         Int       @id @default(autoincrement())
+  store_id   Int
+  title      String    @db.VarChar(100)
+  slug       String    @db.VarChar(100)
+  content    String?
+  is_visible Boolean?  @default(true)
+  is_system  Boolean?  @default(false)
+  sort_order Int?      @default(0)
+  seo_title  String?   @db.VarChar(255)
+  seo_desc   String?
+  image_url  String?
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+  updated_at DateTime? @default(now()) @db.Timestamp(6)
+  store      store     @relation(fields: [store_id], references: [id], onDelete: Cascade)
+
+  @@unique([store_id, slug], map: "unique_store_page_slug")
+  @@index([store_id, sort_order], map: "ix_page_store_order")
+}
+
+model payment {
+  id             Int       @id @default(autoincrement())
+  order_id       Int
+  amount         Float
+  method         String    @db.VarChar(50)
+  status         String?   @db.VarChar(20)
+  transaction_id String?   @db.VarChar(100)
+  created_at     DateTime? @db.Timestamp(6)
+  order          order     @relation(fields: [order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([order_id], map: "ix_payment_order_id")
+  @@index([status], map: "ix_payment_status")
+}
+
+model payment_gateway {
+  id                   Int                    @id @default(autoincrement())
+  name                 String                 @unique @db.VarChar(50)
+  code                 String                 @unique @db.VarChar(50)
+  is_active            Boolean?
+  store_payment_config store_payment_config[]
+}
+
+model payment_log {
+  id               Int       @id @default(autoincrement())
+  order_id         Int?
+  gateway          String?   @db.VarChar(50)
+  action           String?   @db.VarChar(50)
+  request_payload  String?
+  response_payload String?
+  status           String?   @db.VarChar(20)
+  created_at       DateTime? @db.Timestamp(6)
+  order            order?    @relation(fields: [order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([order_id], map: "ix_payment_log_order_id")
+}
+
+model product {
+  id                   Int                   @id @default(autoincrement())
+  name                 String                @db.VarChar(255)
+  description          String
+  price                Float
+  image_url            String?
+  media_id             Int?
+  stock                Int?
+  category             String?               @db.VarChar(255)
+  is_active            Boolean?
+  store_id             Int?
+  short_description    String?
+  slug                 String?               @db.VarChar(255)
+  mrp                  Float?
+  tax_rate             Float?
+  sku                  String?               @db.VarChar(100)
+  low_stock_threshold  Int?
+  stock_status         String?               @db.VarChar(50)
+  weight               Float?
+  length               Float?
+  width                Float?
+  height               Float?
+  shipping_class       String?               @db.VarChar(50)
+  delivery_days        Int?
+  subcategory          String?               @db.VarChar(100)
+  tags                 String?               @db.VarChar(500)
+  is_featured          Boolean?
+  meta_title           String?               @db.VarChar(255)
+  meta_description     String?
+  status               String?               @db.VarChar(50)
+  vendor               String?               @db.VarChar(255)
+  product_type         String?               @db.VarChar(255)
+  brand                String?               @db.VarChar(255)
+  barcode              String?               @db.VarChar(255)
+  cost_per_item        Float?
+  continue_selling_oos Boolean?              @default(false)
+  published_at         DateTime?             @db.Timestamp(6)
+  sales_channels       Json?
+  seo_title            String?               @db.VarChar(255)
+  seo_description      String?
+  order_item           order_item[]
+  media_asset          media_asset?          @relation("ProductMedia", fields: [media_id], references: [id], onUpdate: NoAction)
+  store                store?                @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  product_collections  product_collections[]
+  product_image        product_image[]
+  product_review       product_review[]
+  product_variant      product_variant[]
+
+  @@unique([store_id, slug], map: "_store_product_slug_uc")
+  @@unique([store_id, sku], map: "_store_product_sku_uc")
+  @@index([store_id, is_active], map: "idx_product_store_active")
+  @@index([store_id, category], map: "idx_product_store_category")
+  @@index([store_id, is_featured], map: "idx_product_store_featured")
+  @@index([store_id, status], map: "idx_product_store_status")
+  @@index([category], map: "ix_product_category")
+  @@index([store_id], map: "ix_product_store_id")
+  @@index([media_id], map: "ix_product_media_id")
+}
+
+model product_collections {
+  product_id    Int
+  collection_id Int
+  collection    collection @relation(fields: [collection_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  product       product    @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([product_id, collection_id])
+  @@index([collection_id], map: "idx_product_collections_collection_id")
+}
+
+model product_image {
+  id            Int          @id @default(autoincrement())
+  product_id    Int
+  image_url     String?
+  media_id      Int?
+  is_featured   Boolean?     @default(false)
+  alt_text      String?      @db.VarChar(255)
+  display_order Int?         @default(0)
+  media_asset   media_asset? @relation("ProductImageMedia", fields: [media_id], references: [id], onUpdate: NoAction)
+  product       product      @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([product_id], map: "ix_product_image_product_id")
+  @@index([media_id], map: "ix_product_image_media_id")
+  @@index([product_id, display_order], map: "ix_product_image_order")
+}
+
+model product_review {
+  id             Int       @id @default(autoincrement())
+  product_id     Int
+  store_id       Int?
+  user_id        Int?
+  customer_name  String?   @db.VarChar(100)
+  customer_email String?   @db.VarChar(255)
+  rating         Int?
+  title          String?   @db.VarChar(200)
+  content        String?
+  status         String?   @default("approved") @db.VarChar(20)
+  is_visible     Boolean?  @default(true)
+  created_at     DateTime? @default(now()) @db.Timestamp(6)
+  updated_at     DateTime? @default(now()) @db.Timestamp(6)
+  product        product   @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user           user?     @relation(fields: [user_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  store          store?    @relation(fields: [store_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([store_id, status], map: "idx_product_review_store_status")
+  @@index([product_id, status], map: "idx_product_review_prod_status")
+  @@index([product_id, is_visible], map: "idx_review_prod_visible")
+  @@index([product_id], map: "ix_product_review_product_id")
+  @@index([user_id], map: "ix_product_review_user_id")
+}
+
+model product_variant {
+  id               Int      @id @default(autoincrement())
+  product_id       Int
+  name             String   @db.VarChar(100)
+  sku              String?  @db.VarChar(50)
+  price            Float?
+  stock            Int?
+  is_active        Boolean?
+  options          Json?
+  image_id         Int?
+  compare_at_price Float?
+  cost             Float?
+  barcode          String?  @db.VarChar(100)
+  product          product  @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([product_id], map: "ix_product_variant_product_id")
+}
+
+model promotion {
+  id                 Int       @id @default(autoincrement())
+  store_id           Int
+  title              String    @db.VarChar(200)
+  description        String?
+  badge_label        String?   @db.VarChar(50)
+  promo_type         String?   @db.VarChar(30)
+  image_url          String?   @db.VarChar(500)
+  link_url           String?   @db.VarChar(500)
+  starts_at          DateTime? @db.Timestamp(6)
+  ends_at            DateTime? @db.Timestamp(6)
+  is_active          Boolean?
+  show_on_storefront Boolean?
+  display_order      Int?
+  created_at         DateTime? @db.Timestamp(6)
+  store              store     @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([store_id], map: "ix_promotion_store_id")
+}
+
+model shipment {
+  id                     Int       @id @default(autoincrement())
+  order_id               Int
+  store_id               Int
+  shiprocket_order_id    String?   @db.VarChar(100)
+  shiprocket_shipment_id String?   @db.VarChar(100)
+  awb_code               String?   @db.VarChar(100)
+  courier_id             Int?
+  courier_name           String?   @db.VarChar(100)
+  label_url              String?   @db.VarChar(500)
+  manifest_url           String?   @db.VarChar(500)
+  tracking_url           String?   @db.VarChar(500)
+  status                 String?   @db.VarChar(100)
+  pickup_scheduled_at    DateTime? @db.Timestamp(6)
+  last_synced_at         DateTime? @db.Timestamp(6)
+  created_at             DateTime? @db.Timestamp(6)
+  order                  order     @relation(fields: [order_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  store                  store     @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([order_id], map: "ix_shipment_order_id")
+  @@index([store_id], map: "ix_shipment_store_id")
+}
+
+model shiprocket_config {
+  id               Int       @id @default(autoincrement())
+  store_id         Int       @unique
+  email            String?   @db.VarChar(200)
+  password         String?   @db.VarChar(200)
+  token            String?
+  token_expires_at DateTime? @db.Timestamp(6)
+  is_connected     Boolean?
+  connected_at     DateTime? @db.Timestamp(6)
+  store            store     @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model site_settings {
+  id                     Int     @id @default(autoincrement())
+  store_id               Int?
+  site_name              String? @db.VarChar(100)
+  store_email            String? @db.VarChar(120)
+  store_phone            String? @db.VarChar(50)
+  address_line1          String? @db.VarChar(200)
+  address_line2          String? @db.VarChar(200)
+  city                   String? @db.VarChar(100)
+  state                  String? @db.VarChar(100)
+  country                String? @db.VarChar(100)
+  zip                    String? @db.VarChar(20)
+  logo_url               String? @db.VarChar(200)
+  favicon_url            String? @db.VarChar(200)
+  currency               String? @db.VarChar(10)
+  timezone               String? @db.VarChar(100)
+  language               String? @db.VarChar(20)
+  date_format            String? @db.VarChar(50)
+  time_format            String? @db.VarChar(50)
+  tax_percentage         Float?
+  shipping_fee           Float?
+  allowed_countries      String? @db.VarChar(500)
+  home_category_title    String? @db.VarChar(100)
+  home_category_subtitle String? @db.VarChar(200)
+  legal_info             Json?
+  notification_settings  Json?
+  security_settings      Json?
+  advanced_settings      Json?
+  logo_media_id          Int?
+  favicon_media_id       Int?
+  logo_media             media_asset? @relation("SiteSettingsLogo", fields: [logo_media_id], references: [id], onUpdate: NoAction)
+  favicon_media          media_asset? @relation("SiteSettingsFavicon", fields: [favicon_media_id], references: [id], onUpdate: NoAction)
+  store                  store?  @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([store_id], map: "ix_site_settings_store_id")
+}
+
+model store {
+  id                     Int                     @id @default(autoincrement())
+  name                   String                  @db.VarChar(100)
+  subdomain              String                  @unique @db.VarChar(50)
+  custom_domain          String?                 @unique @db.VarChar(100)
+  is_active              Boolean?
+  is_deleting            Boolean?
+  created_at             DateTime?               @db.Timestamp(6)
+  storage_used_bytes     BigInt?
+  monthly_orders_count   Int?
+  billing_cycle_reset_at DateTime?               @db.Timestamp(6)
+  handle                 String?                 @unique @db.VarChar(100)
+  /// Stable alphabetic public code used in admin URLs (indexed; avoids O(n) scans).
+  public_code            String?                 @unique @db.VarChar(32)
+  blog_post              blog_post[]
+  collection             collection[]
+  coupon                 coupon[]
+  customer               customer[]
+  discount               discount[]
+  domain                 domain[]
+  email_campaign         email_campaign[]
+  home_page_section      home_page_section[]
+  inbox_conversation     inbox_conversation[]
+  instagram_config       instagram_config?
+  media_asset            media_asset[]
+  media_task             media_task[]
+  newsletter             newsletter[]
+  order                  order[]
+  page                   page[]
+  product                product[]
+  product_review         product_review[]
+  promotion              promotion[]
+  shipment               shipment[]
+  shiprocket_config      shiprocket_config?
+  site_settings          site_settings[]
+  stock_provider_config  stock_provider_config[]
+  store_notification     store_notification[]
+  store_payment_config   store_payment_config[]
+  store_seo              store_seo?
+  store_theme            store_theme[]
+  store_user             store_user[]
+  subscription           subscription?
+  subscription_invoice   subscription_invoice[]
+  support_chat_message   support_chat_message[]
+  support_feedback       support_feedback[]
+  user                   user[]
+  whatsapp_config        whatsapp_config?
+  wishlist_item          wishlist_item[]
+}
+
+model store_notification {
+  id         Int       @id @default(autoincrement())
+  store_id   Int
+  type       String    @db.VarChar(50)
+  data       Json?     @db.Json
+  is_read    Boolean?
+  created_at DateTime? @db.Timestamp(6)
+  store      store     @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([store_id, is_read], map: "idx_notif_store_read")
+  @@index([store_id], map: "ix_store_notification_store_id")
+}
+
+model store_payment_config {
+  id              Int             @id @default(autoincrement())
+  store_id        Int
+  gateway_id      Int
+  merchant_id     String?         @db.VarChar(200)
+  is_test_mode    Boolean?        @default(true)
+  is_enabled      Boolean?        @default(false)
+  api_key_enc     String?
+  api_secret_enc  String?
+  extra_config    Json?
+  updated_at      DateTime?       @default(now()) @db.Timestamp(6)
+  webhook_secret  String?
+  payment_gateway payment_gateway @relation(fields: [gateway_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  store           store           @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([store_id, gateway_id])
+  @@index([gateway_id], map: "ix_store_payment_config_gateway_id")
+  @@index([store_id], map: "ix_store_payment_config_store_id")
+}
+
+model payment_webhook_log {
+  id           Int       @id @default(autoincrement())
+  store_id     Int
+  gateway      String    @db.VarChar(50)
+  event_id     String    @unique @db.VarChar(200)
+  order_id     Int?
+  event_type   String?   @db.VarChar(100)
+  payload      Json?
+  status       String?   @db.VarChar(30)
+  error        String?
+  received_at  DateTime? @default(now()) @db.Timestamp(6)
+  processed_at DateTime? @db.Timestamp(6)
+
+  @@index([store_id, gateway])
+  @@index([order_id])
+}
+
+model store_seo {
+  id                          Int       @id @default(autoincrement())
+  store_id                    Int       @unique
+  site_title                  String?   @db.VarChar(200)
+  meta_description            String?   @db.VarChar(500)
+  meta_keywords               String?   @db.VarChar(300)
+  og_title                    String?   @db.VarChar(200)
+  og_description              String?   @db.VarChar(500)
+  og_image_url                String?   @db.VarChar(500)
+  robots_txt                  String?
+  sitemap_enabled             Boolean?
+  canonical_url               String?   @db.VarChar(500)
+  google_analytics_id         String?   @db.VarChar(50)
+  google_search_console_token String?   @db.VarChar(200)
+  updated_at                  DateTime? @db.Timestamp(6)
+  store                       store     @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model store_user {
+  id         Int       @id @default(autoincrement())
+  name       String    @db.VarChar(100)
+  email      String    @db.VarChar(120)
+  store_id   Int
+  created_at DateTime? @db.Timestamp(6)
+  store      store     @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([email, store_id], map: "_store_user_uc")
+  @@index([store_id], map: "idx_store_user_store_id")
+}
+
+model subscription {
+  id                       Int                    @id @default(autoincrement())
+  store_id                 Int                    @unique
+  plan_id                  Int
+  status                   String?                @db.VarChar(30)
+  billing_cycle            String?                @db.VarChar(20)
+  cashfree_subscription_id String?                @unique @db.VarChar(200)
+  cashfree_plan_id         String?                @db.VarChar(200)
+  cashfree_customer_id     String?                @db.VarChar(200)
+  payment_method           String?                @db.VarChar(50)
+  autopay_active           Boolean?
+  trial_start              DateTime?              @db.Timestamp(6)
+  trial_end                DateTime?              @db.Timestamp(6)
+  current_period_start     DateTime?              @db.Timestamp(6)
+  current_period_end       DateTime?              @db.Timestamp(6)
+  next_billing_date        DateTime?              @db.Timestamp(6)
+  cancelled_at             DateTime?              @db.Timestamp(6)
+  expired_at               DateTime?              @db.Timestamp(6)
+  activation_url           String?
+  failure_reason           String?
+  retry_count              Int?
+  last_payment_at          DateTime?              @db.Timestamp(6)
+  last_payment_amount      Float?
+  created_at               DateTime?              @db.Timestamp(6)
+  updated_at               DateTime?              @db.Timestamp(6)
+  subscription_plan        subscription_plan      @relation(fields: [plan_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  store                    store                  @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  subscription_invoice     subscription_invoice[]
+
+  @@index([plan_id], map: "ix_subscription_plan_id")
+}
+
+model subscription_invoice {
+  id                   Int          @id @default(autoincrement())
+  subscription_id      Int
+  store_id             Int
+  invoice_number       String?      @unique @db.VarChar(50)
+  amount               Float
+  currency             String?      @db.VarChar(10)
+  status               String?      @db.VarChar(30)
+  cashfree_payment_id  String?      @db.VarChar(200)
+  cashfree_order_id    String?      @db.VarChar(200)
+  payment_method       String?      @db.VarChar(50)
+  payment_gateway      String?      @db.VarChar(50)
+  billing_period_start DateTime?    @db.Timestamp(6)
+  billing_period_end   DateTime?    @db.Timestamp(6)
+  due_date             DateTime?    @db.Timestamp(6)
+  paid_at              DateTime?    @db.Timestamp(6)
+  failed_at            DateTime?    @db.Timestamp(6)
+  failure_reason       String?
+  pdf_url              String?      @db.VarChar(500)
+  notes                String?
+  created_at           DateTime?    @db.Timestamp(6)
+  updated_at           DateTime?    @db.Timestamp(6)
+  store                store        @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  subscription         subscription @relation(fields: [subscription_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([store_id], map: "ix_subscription_invoice_store_id")
+  @@index([subscription_id], map: "ix_subscription_invoice_subscription_id")
+}
+
+model subscription_plan {
+  id                       Int            @id @default(autoincrement())
+  name                     String         @unique @db.VarChar(50)
+  code                     String         @unique @db.VarChar(30)
+  description              String?
+  billing_cycle            String?        @db.VarChar(20)
+  price_monthly            Float?
+  price_yearly             Float?
+  currency                 String?        @db.VarChar(10)
+  trial_days               Int?
+  is_active                Boolean?
+  is_free                  Boolean?
+  display_order            Int?
+  cashfree_plan_id_monthly String?        @db.VarChar(100)
+  cashfree_plan_id_yearly  String?        @db.VarChar(100)
+  max_products             Int?
+  max_orders_monthly       Int?
+  max_storage_gb           Float?
+  max_image_upload_mb      Float?
+  max_staff_accounts       Int?
+  custom_domain            Boolean?
+  free_ssl                 Boolean?
+  analytics                Boolean?
+  priority_support         Boolean?
+  remove_branding          Boolean?
+  advanced_marketing       Boolean?
+  created_at               DateTime?      @db.Timestamp(6)
+  updated_at               DateTime?      @db.Timestamp(6)
+  subscription             subscription[]
+}
+
+model subscription_webhook_log {
+  id                 Int       @id @default(autoincrement())
+  cashfree_event_id  String    @unique @db.VarChar(200)
+  event_type         String?   @db.VarChar(100)
+  subscription_id_cf String?   @db.VarChar(200)
+  raw_payload        String?
+  processed          Boolean?
+  processing_error   String?
+  received_at        DateTime? @db.Timestamp(6)
+  processed_at       DateTime? @db.Timestamp(6)
+}
+
+model support_chat_message {
+  id                Int       @id @default(autoincrement())
+  store_id          Int
+  user_id           Int
+  sender            String    @db.VarChar(20)
+  message           String
+  suggested_actions String?
+  is_fallback       Boolean?
+  created_at        DateTime? @db.Timestamp(6)
+  store             store     @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user              user      @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([store_id], map: "ix_support_chat_message_store_id")
+  @@index([user_id], map: "ix_support_chat_message_user_id")
+}
+
+model support_feedback {
+  id             Int       @id @default(autoincrement())
+  store_id       Int
+  user_id        Int
+  feedback_type  String    @db.VarChar(50)
+  subject        String    @db.VarChar(200)
+  description    String
+  rating         Int?
+  screenshot_url String?   @db.VarChar(500)
+  status         String?   @db.VarChar(30)
+  created_at     DateTime? @db.Timestamp(6)
+  updated_at     DateTime? @db.Timestamp(6)
+  store          store     @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user           user      @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([store_id], map: "ix_support_feedback_store_id")
+  @@index([user_id], map: "ix_support_feedback_user_id")
+}
+
+model user {
+  id                    Int                     @id @default(autoincrement())
+  name                  String                  @db.VarChar(64)
+  email                 String                  @db.VarChar(120)
+  password_hash         String?                 @db.VarChar(255)
+  is_admin              Boolean?
+  is_blocked            Boolean?
+  phone                 String?                 @db.VarChar(20)
+  store_id              Int?
+  coupon_usage          coupon_usage[]
+  order                 order[]
+  product_review        product_review[]
+  stock_provider_config stock_provider_config[]
+  support_chat_message  support_chat_message[]
+  support_feedback      support_feedback[]
+  store                 store?                  @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([email], map: "ix_user_email")
+  @@index([store_id], map: "ix_user_store_id")
+}
+
+model whatsapp_config {
+  id              Int       @id @default(autoincrement())
+  store_id        Int       @unique
+  phone_number    String?   @db.VarChar(50)
+  api_key         String?   @db.VarChar(250)
+  default_message String?
+  is_connected    Boolean?
+  connected_at    DateTime? @db.Timestamp(6)
+  store           store     @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model shipping_zone {
+  id            Int             @id @default(autoincrement())
+  store_id      Int
+  name          String          @db.VarChar(100)
+  countries     Json?
+  created_at    DateTime?       @default(now()) @db.Timestamp(6)
+  shipping_rate shipping_rate[]
+
+  @@index([store_id], map: "idx_shipping_zone_store_id")
+}
+
+model shipping_rate {
+  id              Int           @id @default(autoincrement())
+  zone_id         Int
+  name            String        @db.VarChar(100)
+  price           Float
+  condition_type  String?       @db.VarChar(50)
+  condition_value Float?
+  delivery_time   String?       @db.VarChar(100)
+  shipping_zone   shipping_zone @relation(fields: [zone_id], references: [id], onDelete: Cascade)
+
+  @@index([zone_id], map: "idx_shipping_rate_zone_id")
+}
+
+model tax_region {
+  id           Int       @id @default(autoincrement())
+  store_id     Int
+  name         String    @db.VarChar(100)
+  country_code String?   @db.VarChar(10)
+  base_rate    Float
+  created_at   DateTime? @default(now()) @db.Timestamp(6)
+
+  @@index([store_id], map: "idx_tax_region_store_id")
+}
+
+model store_staff {
+  id          Int       @id @default(autoincrement())
+  store_id    Int
+  user_id     Int?
+  email       String    @db.VarChar(120)
+  name        String    @db.VarChar(100)
+  role        String    @db.VarChar(50)
+  permissions Json?
+  created_at  DateTime? @default(now()) @db.Timestamp(6)
+
+  @@index([store_id], map: "idx_store_staff_store_id")
+  @@index([user_id], map: "idx_store_staff_user_id")
+}
+
+model stock_provider_config {
+  id          Int       @id @default(autoincrement())
+  store_id    Int
+  provider    String    @db.VarChar(30)
+  api_key_enc String?
+  updated_by  Int?
+  created_at  DateTime? @default(now()) @db.Timestamp(6)
+  updated_at  DateTime? @updatedAt @db.Timestamp(6)
+  /// Admin user who owns this key (each store admin configures their own keys)
+  user_id     Int
+  store       store     @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user        user      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([store_id, user_id, provider], map: "uq_stock_provider_config_store_user_provider")
+  @@index([store_id], map: "ix_stock_provider_config_store_id")
+  @@index([user_id], map: "ix_stock_provider_config_user_id")
+}
+
+model blog_post {
+  id           Int       @id @default(autoincrement())
+  store_id     Int
+  title        String    @db.VarChar(255)
+  slug         String    @db.VarChar(255)
+  excerpt      String?
+  content      String?
+  image_url    String?   @db.VarChar(500)
+  author       String?   @db.VarChar(100)
+  tags         Json?
+  is_published Boolean   @default(false)
+  published_at DateTime? @db.Timestamp(6)
+  created_at   DateTime? @default(now()) @db.Timestamp(6)
+  updated_at   DateTime? @default(now()) @db.Timestamp(6)
+  store        store     @relation(fields: [store_id], references: [id], onDelete: Cascade)
+
+  @@unique([store_id, slug])
+  @@index([store_id, is_published])
+}
+
+model wishlist_item {
+  id          Int       @id @default(autoincrement())
+  store_id    Int
+  customer_id Int
+  product_id  Int
+  created_at  DateTime? @default(now()) @db.Timestamp(6)
+  store       store     @relation(fields: [store_id], references: [id], onDelete: Cascade)
+
+  @@unique([customer_id, product_id])
+  @@index([customer_id])
+  @@index([store_id])
+}
+
+model store_theme {
+  id            Int           @id @default(autoincrement())
+  store_id      Int
+  name          String        @db.VarChar(255)
+  version       String        @default("1.0.0") @db.VarChar(50)
+  status        String        @default("draft") @db.VarChar(50)
+  is_active     Boolean       @default(false)
+  theme_data    Json?         @db.Json
+  preview_image String?
+  created_at    DateTime?     @default(now()) @db.Timestamp(6)
+  updated_at    DateTime?     @default(now()) @db.Timestamp(6)
+  base_theme_id Int?
+  category      String?       @db.VarChar(100)
+  handle        String?       @db.VarChar(100)
+  base_theme    common_theme? @relation(fields: [base_theme_id], references: [id])
+  store         store         @relation(fields: [store_id], references: [id], onDelete: Cascade)
+
+  @@index([store_id, status])
+  @@index([store_id, is_active])
+  @@index([base_theme_id])
+}
+
+model common_theme {
+  id               Int                  @id @default(autoincrement())
+  name             String               @db.VarChar(255)
+  handle           String               @unique @db.VarChar(100)
+  category         String?              @db.VarChar(100)
+  style            String?              @db.VarChar(255)
+  preview_image    String?
+  preview_media_id Int?
+  theme_data       Json?                @db.Json
+  is_system_theme  Boolean              @default(true)
+  is_active        Boolean              @default(true)
+  version          String               @default("1.0.0") @db.VarChar(50)
+  created_at       DateTime?            @default(now()) @db.Timestamp(6)
+  updated_at       DateTime?            @default(now()) @db.Timestamp(6)
+  assets           common_theme_asset[]
+  store_themes     store_theme[]
+
+  @@index([is_active, handle])
+}
+
+model common_theme_asset {
+  id              Int          @id @default(autoincrement())
+  theme_id        Int
+  media_id        Int
+  asset_key       String       @db.VarChar(100)
+  asset_type      String?      @db.VarChar(50)
+  r2_object_key   String?      @db.VarChar(500)
+  is_common_asset Boolean      @default(true)
+  created_at      DateTime?    @default(now()) @db.Timestamp(6)
+  media           media_asset  @relation(fields: [media_id], references: [id])
+  theme           common_theme @relation(fields: [theme_id], references: [id], onDelete: Cascade)
+
+  @@unique([theme_id, asset_key])
+  @@index([media_id])
+  @@index([theme_id])
+}
