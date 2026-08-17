@@ -2,6 +2,8 @@ import os
 import json
 import logging
 import tempfile
+import zipfile
+import re
 import boto3
 import psycopg2
 import smtplib
@@ -586,6 +588,329 @@ def process_image(self, source, asset_id, original_name, mime_type, store_id=Non
         if retries >= max_retries:
             mark_media_failed(asset_id, resolved_store_id, str(e))
             # Keep temp object so admin retry can re-queue without re-upload
+        raise
+
+
+FRAME_ZIP_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".avif"}
+FRAME_ZIP_MAX_FILES = 400
+FRAME_ZIP_MAX_SINGLE = 15 * 1024 * 1024
+_NAT_SORT_RE = re.compile(r"(\d+)")
+
+
+def _natural_sort_key(name: str):
+    parts = _NAT_SORT_RE.split(name.lower())
+    return [int(p) if p.isdigit() else p for p in parts]
+
+
+def _update_frame_zip_job(job_task_id, status=None, result=None, error_message=None, completed=False):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        sets = ["updated_at = NOW()"]
+        vals = []
+        if status is not None:
+            sets.append("status = %s")
+            vals.append(status)
+        if result is not None:
+            sets.append("result = %s")
+            vals.append(json.dumps(result) if not isinstance(result, str) else result)
+        if error_message is not None:
+            sets.append("error_message = %s")
+            vals.append((error_message or "")[:2000])
+        if completed:
+            sets.append("completed_at = NOW()")
+        vals.append(job_task_id)
+        cur.execute(
+            f"UPDATE media_task SET {', '.join(sets)} WHERE id = %s",
+            tuple(vals),
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception:
+        logger.exception("Failed to update frame zip job %s", job_task_id)
+
+
+def _process_single_frame_buffer(
+    r2,
+    bucket_name,
+    store_id,
+    uploaded_by,
+    file_name,
+    raw_bytes,
+):
+    """Create media_asset + WebP variants from in-memory image bytes. Returns asset dict."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            INSERT INTO media_asset (
+                store_id, file_name, mime_type, file_size, status, bucket_name,
+                uploaded_by, original_size, file_type, created_at, updated_at, last_scanned_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW(), NOW())
+            RETURNING id
+            """,
+            (
+                store_id,
+                (file_name or "frame.jpg")[:255],
+                "image/jpeg",
+                len(raw_bytes),
+                STATUS_PROCESSING,
+                bucket_name,
+                uploaded_by,
+                len(raw_bytes),
+                "image",
+            ),
+        )
+        asset_id = cur.fetchone()[0]
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
+
+    api_base = (
+        os.environ.get("PUBLIC_API_URL")
+        or os.environ.get("API_URL")
+        or "http://localhost:3000"
+    ).rstrip("/")
+    durable_url = f"{api_base}/api/media/assets/{asset_id}/content"
+
+    try:
+        with Image.open(BytesIO(raw_bytes)) as opened:
+            opened.load()
+            fmt = (opened.format or "").upper()
+            if fmt and fmt not in ALLOWED_FORMATS:
+                raise ValueError(f"Unsupported image format: {fmt}")
+            img = ImageOps.exif_transpose(opened) or opened
+            width, height = img.size
+            if width < 1 or height < 1 or width > MAX_DIMENSION or height > MAX_DIMENSION:
+                raise ValueError(f"Invalid image dimensions: {width}x{height}")
+
+            buffers = {
+                "optimized": optimize_image(img, None, quality=85),
+                "thumbnail": generate_thumbnail(img),
+            }
+            buffers.update(generate_responsive_sizes(img))
+
+            keys = {}
+            total_size = 0
+            for size_name, buf in buffers.items():
+                total_size += buf.getbuffer().nbytes
+                key = f"stores/{store_id}/media/{asset_id}/{size_name}.webp"
+                keys[size_name] = upload_to_r2(r2, bucket_name, key, buf)
+
+            r2_url = keys["optimized"]
+            thumb_uri = keys["thumbnail"]
+            original_http = public_or_asset_url(r2_url, asset_id, "optimized")
+            thumb_http = public_or_asset_url(thumb_uri, asset_id, "thumbnail")
+            responsive_keys = json.dumps({
+                "thumbnail": keys["thumbnail"],
+                "medium": keys["medium"],
+                "large": keys["large"],
+                "optimized": keys["optimized"],
+            })
+            thumb_keys = json.dumps({"small": keys["thumbnail"]})
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                """
+                UPDATE media_asset
+                SET status = %s, file_size = %s, width = %s, height = %s,
+                    r2_object_key = %s, bucket_name = %s, responsive_keys = %s,
+                    thumbnail_keys = %s, original_url = %s, thumbnail_url = %s,
+                    webp_url = %s, r2_optimized_key = %s, r2_thumbnail_key = %s,
+                    r2_medium_key = %s, r2_large_key = %s, error_message = NULL,
+                    optimized_size = %s, mime_type = %s, updated_at = NOW()
+                WHERE id = %s AND store_id = %s
+                """,
+                (
+                    STATUS_READY,
+                    total_size,
+                    width,
+                    height,
+                    r2_url,
+                    bucket_name,
+                    responsive_keys,
+                    thumb_keys,
+                    original_http,
+                    thumb_http,
+                    original_http,
+                    keys["optimized"],
+                    keys["thumbnail"],
+                    keys["medium"],
+                    keys["large"],
+                    total_size,
+                    "image/webp",
+                    asset_id,
+                    store_id,
+                ),
+            )
+            conn.commit()
+        finally:
+            cur.close()
+            conn.close()
+
+        return {
+            "id": asset_id,
+            "status": STATUS_READY,
+            "url": durable_url,
+            "file_name": file_name,
+            "width": width,
+            "height": height,
+        }
+    except Exception as e:
+        mark_media_failed(asset_id, store_id, str(e))
+        return {
+            "id": asset_id,
+            "status": STATUS_FAILED,
+            "url": None,
+            "file_name": file_name,
+            "error": str(e)[:500],
+        }
+
+
+@app.task(
+    name="media_worker.tasks.process_frame_zip",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=120,
+    max_retries=2,
+    acks_late=True,
+)
+def process_frame_zip(self, source, job_task_id, store_id, uploaded_by=None):
+    """
+    Extract image frames from a ZIP on R2, optimize each into media_asset rows,
+    and report progress on media_task (id=job_task_id).
+    """
+    bucket_name = os.environ.get("R2_BUCKET_NAME", "simple-meesho-media")
+    r2 = get_r2_client()
+    local_zip = None
+    temp_bucket = temp_key = None
+    assets_out = []
+    failed = 0
+
+    result_base = {
+        "phase": "starting",
+        "total": 0,
+        "processed": 0,
+        "failed": 0,
+        "assets": [],
+        "file_name": None,
+    }
+
+    try:
+        if not job_task_id or not store_id:
+            raise ValueError("job_task_id and store_id are required")
+
+        _update_frame_zip_job(job_task_id, status=STATUS_PROCESSING, result={
+            **result_base,
+            "phase": "downloading",
+        })
+
+        image_buf, local_path_to_cleanup, temp_bucket, temp_key = load_image_bytes(
+            source, r2, bucket_name
+        )
+        # load_image_bytes returns BytesIO for R2; write to temp file for zipfile
+        fd, local_zip = tempfile.mkstemp(suffix=".zip")
+        os.close(fd)
+        with open(local_zip, "wb") as out:
+            out.write(image_buf.read() if hasattr(image_buf, "read") else image_buf.getvalue())
+        if local_path_to_cleanup and os.path.exists(local_path_to_cleanup):
+            try:
+                os.remove(local_path_to_cleanup)
+            except OSError:
+                pass
+
+        if not zipfile.is_zipfile(local_zip):
+            raise ValueError("Uploaded file is not a valid ZIP archive")
+
+        members = []
+        with zipfile.ZipFile(local_zip, "r") as zf:
+            for info in zf.infolist():
+                if info.is_dir():
+                    continue
+                # Skip macOS / hidden junk
+                name = info.filename.replace("\\", "/")
+                base = os.path.basename(name)
+                if not base or base.startswith(".") or name.startswith("__MACOSX"):
+                    continue
+                ext = os.path.splitext(base)[1].lower()
+                if ext not in FRAME_ZIP_IMAGE_EXTS:
+                    continue
+                if info.file_size > FRAME_ZIP_MAX_SINGLE:
+                    raise ValueError(f"Frame too large in ZIP: {base}")
+                members.append((name, base, info.file_size))
+
+            members.sort(key=lambda m: _natural_sort_key(m[1]))
+            if not members:
+                raise ValueError("ZIP contains no supported images (jpg/png/webp/avif)")
+            if len(members) > FRAME_ZIP_MAX_FILES:
+                raise ValueError(f"ZIP has too many frames (max {FRAME_ZIP_MAX_FILES})")
+
+            total = len(members)
+            result_base["total"] = total
+            result_base["phase"] = "processing"
+            _update_frame_zip_job(job_task_id, result={**result_base, "assets": assets_out})
+
+            for idx, (full_name, base, _sz) in enumerate(members):
+                raw = zf.read(full_name)
+                asset = _process_single_frame_buffer(
+                    r2, bucket_name, int(store_id), uploaded_by, base, raw
+                )
+                assets_out.append(asset)
+                if asset.get("status") != STATUS_READY:
+                    failed += 1
+                result_base["processed"] = idx + 1
+                result_base["failed"] = failed
+                result_base["assets"] = assets_out
+                if (idx + 1) % 5 == 0 or idx + 1 == total:
+                    _update_frame_zip_job(job_task_id, result=dict(result_base))
+
+        ready_urls = [a["url"] for a in assets_out if a.get("status") == STATUS_READY and a.get("url")]
+        final_status = STATUS_READY if ready_urls else STATUS_FAILED
+        result_base["phase"] = "done" if ready_urls else "failed"
+        result_base["frame_urls"] = ready_urls
+        result_base["assets"] = assets_out
+        _update_frame_zip_job(
+            job_task_id,
+            status=final_status,
+            result=result_base,
+            error_message=None if ready_urls else "No frames processed successfully",
+            completed=True,
+        )
+
+        cleanup_temp_file(local_path=local_zip, r2=r2, bucket=temp_bucket, key=temp_key)
+        local_zip = None
+        return {
+            "status": "success" if ready_urls else "failed",
+            "job_task_id": job_task_id,
+            "total": result_base["total"],
+            "ready": len(ready_urls),
+            "failed": failed,
+        }
+
+    except Exception as e:
+        logger.exception("process_frame_zip failed job=%s: %s", job_task_id, e)
+        retries = getattr(self.request, "retries", 0)
+        max_retries = getattr(self, "max_retries", 2) or 2
+        if retries >= max_retries:
+            result_base["phase"] = "failed"
+            result_base["assets"] = assets_out
+            result_base["failed"] = failed + 1
+            _update_frame_zip_job(
+                job_task_id,
+                status=STATUS_FAILED,
+                result=result_base,
+                error_message=str(e),
+                completed=True,
+            )
+            if local_zip:
+                cleanup_temp_file(local_path=local_zip, r2=r2, bucket=temp_bucket, key=temp_key)
         raise
 
 
