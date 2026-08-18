@@ -13,6 +13,8 @@ import {
   type ProcessImageJob,
   type SeedStoreJob,
   type AbandonedCheckoutJob,
+  type AppWebhookJob,
+  type WhatsappSendJob,
   type SendEmailJob,
   type SendOtpEmailJob,
 } from './jobs/bullmq.constants';
@@ -117,6 +119,10 @@ export class WorkerRunner implements OnModuleInit, OnModuleDestroy {
         const d = job.data as AbandonedCheckoutJob;
         return this.sendAbandoned(d);
       }
+      case BULLMQ_JOB.APP_WEBHOOK:
+        return this.deliverAppWebhook(job.data as AppWebhookJob);
+      case BULLMQ_JOB.WHATSAPP_SEND:
+        return this.sendWhatsapp(job.data as WhatsappSendJob);
       default:
         throw new Error(`Unknown job name: ${job.name}`);
     }
@@ -161,5 +167,37 @@ export class WorkerRunner implements OnModuleInit, OnModuleDestroy {
   private async sendEmail(data: SendEmailJob) {
     await this.mailer.sendMail({ to: data.to, subject: data.subject, html: data.bodyHtml });
     return { status: 'success' };
+  }
+
+  private async deliverAppWebhook(data: AppWebhookJob) {
+    if (!data.targetUrl) return { status: 'skipped', reason: 'no_target' };
+    const body = JSON.stringify({
+      topic: data.topic,
+      store_id: data.storeId,
+      payload: data.payload,
+    });
+    const crypto = await import('crypto');
+    const sig = data.secret
+      ? crypto.createHmac('sha256', data.secret).update(body).digest('hex')
+      : '';
+    const res = await fetch(data.targetUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(sig ? { 'X-App-Signature': sig } : {}),
+      },
+      body,
+    });
+    if (!res.ok) throw new Error(`webhook ${res.status}`);
+    return { status: 'delivered', topic: data.topic };
+  }
+
+  private async sendWhatsapp(data: WhatsappSendJob) {
+    const cfg = await this.prisma.whatsapp_config.findUnique({ where: { store_id: data.storeId } });
+    if (!cfg?.phone_number || !cfg.api_key) {
+      this.logger.log(`whatsapp_send skipped store=${data.storeId} (not configured)`);
+      return { status: 'skipped' };
+    }
+    return { status: 'queued_external', to: data.to, storeId: data.storeId };
   }
 }

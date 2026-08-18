@@ -10,6 +10,8 @@ export const BULLMQ_JOB = {
   DELETE_STORE_ACCOUNT: 'delete_store_account',
   SEED_DEFAULT_STORE_DATA: 'seed_default_store_data',
   ABANDONED_CHECKOUT: 'abandoned_checkout',
+  APP_WEBHOOK: 'app_webhook',
+  WHATSAPP_SEND: 'whatsapp_send',
 } as const;
 
 export type BullmqJobName = (typeof BULLMQ_JOB)[keyof typeof BULLMQ_JOB];
@@ -59,4 +61,20 @@ export interface AbandonedCheckoutJob {
   storeId: number;
   email: string;
   name?: string;
+}
+
+export interface AppWebhookJob {
+  storeId: number;
+  topic: string;
+  payload: Record<string, unknown>;
+  targetUrl?: string;
+  secret?: string;
+  webhookId?: number;
+}
+
+export interface WhatsappSendJob {
+  storeId: number;
+  to: string;
+  body: string;
+  idempotencyKey?: string;
 }
