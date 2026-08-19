@@ -11,9 +11,9 @@ heap_mb() {
   if [ -n "${max}" ] && [ "${max}" != "max" ]; then
     mb=$((max / 1024 / 1024))
     if [ "${mb}" -gt 64 ] && [ "${mb}" -lt 65536 ]; then
-      heap=$((mb * 50 / 100))
-      if [ "${heap}" -lt 128 ]; then heap=128; fi
-      if [ "${heap}" -gt 384 ]; then heap=384; fi
+      heap=$((mb * 78 / 100))
+      if [ "${heap}" -lt 192 ]; then heap=192; fi
+      if [ "${heap}" -gt 896 ]; then heap=896; fi
       echo "${heap}"
       return
     fi
@@ -23,9 +23,10 @@ heap_mb() {
 
 HEAP=$(heap_mb)
 export NODE_OPTIONS="--max-old-space-size=${HEAP} ${NODE_OPTIONS:-}"
-export UV_THREADPOOL_SIZE="${UV_THREADPOOL_SIZE:-2}"
+export UV_THREADPOOL_SIZE="${UV_THREADPOOL_SIZE:-4}"
 export WORKER_CONCURRENCY="${WORKER_CONCURRENCY:-1}"
-export SHARP_CONCURRENCY="${SHARP_CONCURRENCY:-1}"
+export SHARP_CONCURRENCY="${SHARP_CONCURRENCY:-2}"
+export FRAME_ZIP_PARALLEL="${FRAME_ZIP_PARALLEL:-3}"
 export PG_POOL_MAX="${PG_POOL_MAX:-2}"
 
 echo "media-worker heap=${HEAP}mb concurrency=${WORKER_CONCURRENCY} sharp=${SHARP_CONCURRENCY} pg=${PG_POOL_MAX}"

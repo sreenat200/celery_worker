@@ -21,7 +21,21 @@ import { encodeWebp, heapMb, MAX_SINGLE_FRAME, MAX_ZIP_BYTES, readImageMeta } fr
 const logger = new Logger('ProcessFrameZip');
 const FRAME_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.avif']);
 const MAX_FILES = Math.max(50, parseInt(process.env.FRAME_ZIP_MAX_FILES || '400', 10) || 400);
+const PARALLEL = Math.max(1, Math.min(parseInt(process.env.FRAME_ZIP_PARALLEL || '3', 10) || 3, 6));
 const NAT = /(\d+)/g;
+
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, i: number) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+  return out;
+}
 
 function naturalSortKey(name: string): (string | number)[] {
   return name.toLowerCase().split(NAT).map((p) => ( /^\d+$/.test(p) ? Number(p) : p ));
@@ -80,19 +94,23 @@ async function processFrameBuffer(
     if (width < 1 || height < 1 || width > MAX_DIMENSION || height > MAX_DIMENSION) {
       throw new Error(`Invalid image dimensions: ${width}x${height}`);
     }
-    const optimized = await encodeWebp(raw, undefined, 85);
+    const optimized = await encodeWebp(raw, undefined, 78);
+    const thumbnail = await encodeWebp(optimized, SIZES.thumbnail, SIZES.thumbnail.quality);
     const keys: Record<string, string> = {};
-    let total = 0;
-    const variants: Array<[string, Buffer]> = [['optimized', optimized]];
-    for (const name of ['thumbnail', 'medium', 'large'] as const) {
-      variants.push([name, await encodeWebp(optimized, SIZES[name], SIZES[name].quality)]);
-    }
-    for (const [name, buf] of variants) {
-      total += buf.length;
-      const key = `stores/${storeId}/media/${asset.id}/${name}.webp`;
-      await storage.uploadFile(buf, key, 'image/webp');
-      keys[name] = storage.toR2Uri(key);
-    }
+    const variants: Array<[string, Buffer]> = [
+      ['optimized', optimized],
+      ['thumbnail', thumbnail],
+    ];
+    await Promise.all(
+      variants.map(async ([name, buf]) => {
+        const key = `stores/${storeId}/media/${asset.id}/${name}.webp`;
+        await storage.uploadFile(buf, key, 'image/webp');
+        keys[name] = storage.toR2Uri(key);
+      }),
+    );
+    keys.medium = keys.optimized;
+    keys.large = keys.optimized;
+    const total = optimized.length + thumbnail.length;
     const originalHttp = publicOrAssetUrl(keys.optimized, asset.id, 'optimized');
     const thumbHttp = publicOrAssetUrl(keys.thumbnail, asset.id, 'thumbnail');
     await prisma.media_asset.updateMany({
@@ -212,20 +230,23 @@ export async function processFrameZipJob(
     resultBase.phase = 'processing';
     await updateJob(prisma, jobTaskId, { result: { ...resultBase, assets: assetsOut } });
 
-    for (let idx = 0; idx < members.length; idx++) {
-      const entry = members[idx];
+    logger.log(`zip job=${jobTaskId} frames=${members.length} parallel=${PARALLEL} rss=${heapMb()}mb`);
+    const results = await mapLimit(members, PARALLEL, async (entry, idx) => {
       const base = path.basename(entry.entryName.replace(/\\/g, '/'));
       const raw = entry.getData();
       const asset = await processFrameBuffer(prisma, storage, storeId, uploadedBy, base, raw);
-      assetsOut.push(asset);
-      if (asset.status !== STATUS_READY) failed += 1;
-      resultBase.processed = idx + 1;
-      resultBase.failed = failed;
-      resultBase.assets = assetsOut;
-      if ((idx + 1) % 5 === 0 || idx + 1 === members.length) {
+      assetsOut[idx] = asset;
+      resultBase.processed = assetsOut.filter(Boolean).length;
+      resultBase.failed = assetsOut.filter((a) => a && a.status !== STATUS_READY).length;
+      resultBase.assets = assetsOut.filter(Boolean);
+      if (resultBase.processed % 8 === 0 || resultBase.processed === members.length) {
         await updateJob(prisma, jobTaskId, { result: { ...resultBase } });
       }
-    }
+      return asset;
+    });
+    assetsOut.length = 0;
+    assetsOut.push(...results);
+    failed = results.filter((a) => a.status !== STATUS_READY).length;
 
     const readyUrls = assetsOut.filter((a) => a.status === STATUS_READY && a.url).map((a) => a.url);
     const finalStatus = readyUrls.length ? STATUS_READY : STATUS_FAILED;
