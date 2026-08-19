@@ -20,7 +20,7 @@ import { encodeWebp, heapMb, MAX_SINGLE_FRAME, MAX_ZIP_BYTES, readImageMeta } fr
 
 const logger = new Logger('ProcessFrameZip');
 const FRAME_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.avif']);
-const MAX_FILES = 200;
+const MAX_FILES = Math.max(50, parseInt(process.env.FRAME_ZIP_MAX_FILES || '400', 10) || 400);
 const NAT = /(\d+)/g;
 
 function naturalSortKey(name: string): (string | number)[] {

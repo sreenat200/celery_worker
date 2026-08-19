@@ -52,12 +52,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       connectionTimeoutMillis,
       keepAlive: true,
       keepAliveInitialDelayMillis: 10000,
+      options: `-c statement_timeout=${statementTimeout}`,
       ...(ssl ? { ssl } : {}),
-    });
-
-    pool.on('connect', (client) => {
-      // Fail runaway queries so sockets return to the pool quickly.
-      client.query(`SET statement_timeout TO ${statementTimeout}`).catch(() => undefined);
     });
 
     pool.on('error', (err) => {

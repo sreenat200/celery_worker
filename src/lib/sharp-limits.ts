@@ -4,7 +4,7 @@ export const INPUT_PIXELS = 16_000_000;
 export const PROCESS_MAX = 2048;
 export const WEBP_EFFORT = 2;
 export const MAX_SOURCE_BYTES = 20 * 1024 * 1024;
-export const MAX_ZIP_BYTES = 40 * 1024 * 1024;
+export const MAX_ZIP_BYTES = 200 * 1024 * 1024;
 export const MAX_SINGLE_FRAME = 8 * 1024 * 1024;
 
 export function configureSharp() {
