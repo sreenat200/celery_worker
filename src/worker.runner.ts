@@ -24,6 +24,23 @@ import { seedDefaultStoreData } from './lib/seed-store';
 import { deleteStoreAccount } from './lib/delete-store';
 import { heapMb } from './lib/sharp-limits';
 
+function out(msg: string) {
+  process.stdout.write(`${new Date().toISOString()} [bullmq] ${msg}\n`);
+}
+
+function jobMeta(job: Job) {
+  const d = (job.data || {}) as Record<string, unknown>;
+  const bits = [
+    d.storeId != null ? `store=${d.storeId}` : '',
+    d.assetId != null ? `asset=${d.assetId}` : '',
+    d.jobTaskId != null ? `task=${d.jobTaskId}` : '',
+    d.to != null ? `to=${String(d.to)}` : '',
+    d.topic != null ? `topic=${d.topic}` : '',
+    d.source != null ? `source=${String(d.source).slice(-80)}` : '',
+  ].filter(Boolean);
+  return bits.join(' ');
+}
+
 @Injectable()
 export class WorkerRunner implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger('BullmqWorker');
@@ -55,23 +72,23 @@ export class WorkerRunner implements OnModuleInit, OnModuleDestroy {
     );
 
     this.worker.on('active', (job) => {
-      this.logger.log(`start job=${job.id} name=${job.name} attempt=${job.attemptsMade + 1} rss=${heapMb()}mb`);
+      out(`START id=${job.id} name=${job.name} attempt=${job.attemptsMade + 1} ${jobMeta(job)} rss=${heapMb()}mb`);
     });
-    this.worker.on('completed', (job) => {
-      this.logger.log(`complete job=${job.id} name=${job.name} rss=${heapMb()}mb`);
+    this.worker.on('completed', (job, result) => {
+      const summary = result && typeof result === 'object' ? JSON.stringify(result).slice(0, 240) : '';
+      out(`DONE  id=${job.id} name=${job.name} ${jobMeta(job)} rss=${heapMb()}mb ${summary}`);
     });
     this.worker.on('failed', (job, err) => {
-      this.logger.error(
-        `fail job=${job?.id} name=${job?.name} attempt=${(job?.attemptsMade || 0) + 1}: ${err.message}`,
-      );
+      out(`FAIL  id=${job?.id} name=${job?.name} attempt=${(job?.attemptsMade || 0) + 1} ${err.message}`);
+    });
+    this.worker.on('stalled', (jobId) => {
+      out(`STALL id=${jobId}`);
     });
     this.worker.on('error', (err) => {
-      this.logger.error(`worker error: ${err.message}`);
+      out(`ERROR ${err.message}`);
     });
 
-    this.logger.log(
-      `BullMQ worker listening on ${BULLMQ_MEDIA_QUEUE} concurrency=${concurrency} lock=${lockMs}ms`,
-    );
+    out(`listening queue=${BULLMQ_MEDIA_QUEUE} concurrency=${concurrency} lock=${lockMs}ms`);
   }
 
   async onModuleDestroy() {
