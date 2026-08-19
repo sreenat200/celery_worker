@@ -1,4 +1,3 @@
-import sharp from 'sharp';
 import { Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
@@ -12,22 +11,9 @@ import {
   STATUS_READY,
   publicOrAssetUrl,
 } from './media-status';
+import { encodeWebp, heapMb, MAX_SOURCE_BYTES, readImageMeta } from './sharp-limits';
 
 const logger = new Logger('ProcessImage');
-
-async function optimizeWebp(input: Buffer, size?: { w: number; h: number }, quality = 85): Promise<Buffer> {
-  let pipeline = sharp(input, { failOn: 'error', limitInputPixels: 40_000_000 }).rotate();
-  const meta = await pipeline.metadata();
-  if (meta.hasAlpha || meta.channels === 4) {
-    pipeline = sharp(input, { failOn: 'error', limitInputPixels: 40_000_000 })
-      .rotate()
-      .flatten({ background: { r: 255, g: 255, b: 255 } });
-  }
-  if (size) {
-    pipeline = pipeline.resize(size.w, size.h, { fit: 'inside', withoutEnlargement: true });
-  }
-  return pipeline.webp({ quality, effort: 4 }).toBuffer();
-}
 
 export async function markMediaFailed(
   prisma: PrismaService,
@@ -112,41 +98,33 @@ export async function processImageJob(
   if (!downloaded?.buffer?.length) {
     throw new Error(`Failed to load source for media ${assetId}`);
   }
+  if (downloaded.buffer.length > MAX_SOURCE_BYTES) {
+    throw new Error(`Source too large (${downloaded.buffer.length} bytes)`);
+  }
 
   try {
-    const meta = await sharp(downloaded.buffer, {
-      failOn: 'error',
-      limitInputPixels: 40_000_000,
-    })
-      .rotate()
-      .metadata();
+    logger.log(`process media=${assetId} src=${downloaded.buffer.length}b rss=${heapMb()}mb`);
+    const meta = await readImageMeta(downloaded.buffer);
     const width = meta.width || 0;
     const height = meta.height || 0;
     if (width < 1 || height < 1 || width > MAX_DIMENSION || height > MAX_DIMENSION) {
       throw new Error(`Invalid image dimensions: ${width}x${height}`);
     }
 
-    const buffers: Record<string, Buffer> = {
-      optimized: await optimizeWebp(downloaded.buffer, undefined, 85),
-      thumbnail: await optimizeWebp(downloaded.buffer, SIZES.thumbnail, SIZES.thumbnail.quality),
-      medium: await optimizeWebp(downloaded.buffer, SIZES.medium, SIZES.medium.quality),
-      large: await optimizeWebp(downloaded.buffer, SIZES.large, SIZES.large.quality),
-    };
+    const optimized = await encodeWebp(downloaded.buffer, undefined, 85);
+    downloaded.buffer = Buffer.alloc(0);
 
     const keys: Record<string, string> = {};
     let totalSize = 0;
-    for (const [sizeName, buf] of Object.entries(buffers)) {
+    const variants: Array<[string, Buffer]> = [['optimized', optimized]];
+    for (const name of ['thumbnail', 'medium', 'large'] as const) {
+      variants.push([name, await encodeWebp(optimized, SIZES[name], SIZES[name].quality)]);
+    }
+    for (const [sizeName, buf] of variants) {
       totalSize += buf.length;
       const key = `stores/${resolvedStoreId}/media/${assetId}/${sizeName}.webp`;
       await storage.uploadFile(buf, key, 'image/webp');
       keys[sizeName] = storage.toR2Uri(key);
-    }
-
-    try {
-      const avif = await sharp(buffers.optimized).avif({ quality: 50 }).toBuffer();
-      await storage.uploadFile(avif, `stores/${resolvedStoreId}/media/${assetId}/optimized.avif`, 'image/avif');
-    } catch (avifErr) {
-      logger.log(`AVIF encode skipped for media ${assetId}: ${(avifErr as Error).message}`);
     }
 
     const r2Url = keys.optimized;

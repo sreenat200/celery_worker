@@ -2,7 +2,6 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 import AdmZip from 'adm-zip';
-import sharp from 'sharp';
 import { Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
@@ -17,27 +16,15 @@ import {
   publicOrAssetUrl,
 } from './media-status';
 import { markMediaFailed } from './image-pipeline';
+import { encodeWebp, heapMb, MAX_SINGLE_FRAME, MAX_ZIP_BYTES, readImageMeta } from './sharp-limits';
 
 const logger = new Logger('ProcessFrameZip');
 const FRAME_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.avif']);
-const MAX_FILES = 400;
-const MAX_SINGLE = 15 * 1024 * 1024;
+const MAX_FILES = 200;
 const NAT = /(\d+)/g;
 
 function naturalSortKey(name: string): (string | number)[] {
   return name.toLowerCase().split(NAT).map((p) => ( /^\d+$/.test(p) ? Number(p) : p ));
-}
-
-async function optimizeWebp(input: Buffer, size?: { w: number; h: number }, quality = 85): Promise<Buffer> {
-  let pipeline = sharp(input, { failOn: 'error', limitInputPixels: 40_000_000 }).rotate();
-  const meta = await pipeline.metadata();
-  if (meta.hasAlpha || meta.channels === 4) {
-    pipeline = sharp(input, { failOn: 'error', limitInputPixels: 40_000_000 })
-      .rotate()
-      .flatten({ background: { r: 255, g: 255, b: 255 } });
-  }
-  if (size) pipeline = pipeline.resize(size.w, size.h, { fit: 'inside', withoutEnlargement: true });
-  return pipeline.webp({ quality, effort: 4 }).toBuffer();
 }
 
 async function updateJob(
@@ -87,21 +74,20 @@ async function processFrameBuffer(
   });
   const durable = durableContentUrl(asset.id);
   try {
-    const meta = await sharp(raw, { failOn: 'error', limitInputPixels: 40_000_000 }).rotate().metadata();
+    const meta = await readImageMeta(raw);
     const width = meta.width || 0;
     const height = meta.height || 0;
     if (width < 1 || height < 1 || width > MAX_DIMENSION || height > MAX_DIMENSION) {
       throw new Error(`Invalid image dimensions: ${width}x${height}`);
     }
-    const buffers = {
-      optimized: await optimizeWebp(raw, undefined, 85),
-      thumbnail: await optimizeWebp(raw, SIZES.thumbnail, SIZES.thumbnail.quality),
-      medium: await optimizeWebp(raw, SIZES.medium, SIZES.medium.quality),
-      large: await optimizeWebp(raw, SIZES.large, SIZES.large.quality),
-    };
+    const optimized = await encodeWebp(raw, undefined, 85);
     const keys: Record<string, string> = {};
     let total = 0;
-    for (const [name, buf] of Object.entries(buffers)) {
+    const variants: Array<[string, Buffer]> = [['optimized', optimized]];
+    for (const name of ['thumbnail', 'medium', 'large'] as const) {
+      variants.push([name, await encodeWebp(optimized, SIZES[name], SIZES[name].quality)]);
+    }
+    for (const [name, buf] of variants) {
       total += buf.length;
       const key = `stores/${storeId}/media/${asset.id}/${name}.webp`;
       await storage.uploadFile(buf, key, 'image/webp');
@@ -186,11 +172,10 @@ export async function processFrameZipJob(
       result: { ...resultBase, phase: 'downloading' },
     });
 
-    const downloaded = await storage.getObjectBuffer(source);
-    if (!downloaded?.buffer?.length) throw new Error('Failed to download ZIP from storage');
-
     localZip = path.join(os.tmpdir(), `frames-${jobTaskId}-${Date.now()}.zip`);
-    fs.writeFileSync(localZip, downloaded.buffer);
+    const saved = await storage.downloadToFile(source, localZip, MAX_ZIP_BYTES);
+    if (!saved) throw new Error('Failed to download ZIP from storage');
+    logger.log(`zip job=${jobTaskId} rss=${heapMb()}mb`);
 
     const zip = new AdmZip(localZip);
     const members = zip
@@ -202,7 +187,7 @@ export async function processFrameZipJob(
         if (!base || base.startsWith('.') || name.startsWith('__MACOSX')) return false;
         const ext = path.extname(base).toLowerCase();
         if (!FRAME_EXTS.has(ext)) return false;
-        if ((e.header?.size || 0) > MAX_SINGLE) {
+        if ((e.header?.size || 0) > MAX_SINGLE_FRAME) {
           throw new Error(`Frame too large in ZIP: ${base}`);
         }
         return true;

@@ -1,8 +1,8 @@
 import { Logger } from '@nestjs/common';
-import sharp from 'sharp';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { durableContentUrl, publicOrAssetUrl } from './media-status';
+import { encodeWebp, readImageMeta } from './sharp-limits';
 
 const logger = new Logger('SeedStore');
 const SEED_MARKER = 'platform_seed_v1';
@@ -87,20 +87,9 @@ async function optimizeSeedImage(sourceUrl: string) {
     const fallback = `https://picsum.photos/seed/${Math.abs(hashCode(sourceUrl)) % 10000}/1200/1200.webp`;
     raw = await downloadBytes(fallback);
   }
-  const base = sharp(raw).rotate().flatten({ background: { r: 255, g: 255, b: 255 } });
-  const meta = await base.metadata();
-  const optimized = await sharp(raw)
-    .rotate()
-    .flatten({ background: { r: 255, g: 255, b: 255 } })
-    .resize(1600, 1600, { fit: 'inside', withoutEnlargement: true })
-    .webp({ quality: 85 })
-    .toBuffer();
-  const thumbnail = await sharp(raw)
-    .rotate()
-    .flatten({ background: { r: 255, g: 255, b: 255 } })
-    .resize(400, 400, { fit: 'inside', withoutEnlargement: true })
-    .webp({ quality: 80 })
-    .toBuffer();
+  const meta = await readImageMeta(raw);
+  const optimized = await encodeWebp(raw, { w: 1600, h: 1600 }, 80);
+  const thumbnail = await encodeWebp(optimized, { w: 400, h: 400 }, 75);
   return {
     optimized,
     thumbnail,

@@ -1,4 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { createWriteStream } from 'fs';
+import { Readable } from 'stream';
+import { pipeline } from 'stream/promises';
 import {
   S3Client,
   PutObjectCommand,
@@ -145,6 +148,21 @@ export class StorageService {
       this.logger.warn(`Failed to stream R2 object ${objectKey}: ${(e as Error).message}`);
       return null;
     }
+  }
+
+  async downloadToFile(keyOrUri: string, dest: string, maxBytes?: number): Promise<boolean> {
+    const obj = await this.getObjectStream(keyOrUri);
+    if (!obj?.body) return false;
+    if (maxBytes && obj.contentLength && obj.contentLength > maxBytes) {
+      throw new Error(`Object too large (${obj.contentLength} bytes)`);
+    }
+    const body = obj.body as any;
+    const nodeStream =
+      typeof body.pipe === 'function'
+        ? body
+        : Readable.fromWeb(body.transformToWebStream ? body.transformToWebStream() : body);
+    await pipeline(nodeStream, createWriteStream(dest));
+    return true;
   }
 
   /** Fetch object bytes from R2 (prefer getObjectStream for large files). */

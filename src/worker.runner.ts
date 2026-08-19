@@ -22,6 +22,7 @@ import { processImageJob } from './lib/image-pipeline';
 import { processFrameZipJob } from './lib/frame-zip';
 import { seedDefaultStoreData } from './lib/seed-store';
 import { deleteStoreAccount } from './lib/delete-store';
+import { heapMb } from './lib/sharp-limits';
 
 @Injectable()
 export class WorkerRunner implements OnModuleInit, OnModuleDestroy {
@@ -36,7 +37,7 @@ export class WorkerRunner implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
-    const concurrency = Math.max(1, parseInt(process.env.WORKER_CONCURRENCY || '2', 10) || 2);
+    const concurrency = Math.max(1, parseInt(process.env.WORKER_CONCURRENCY || '1', 10) || 1);
     const lockMs = Math.max(
       60_000,
       parseInt(process.env.WORKER_LOCK_DURATION_MS || String(20 * 60_000), 10) || 20 * 60_000,
@@ -54,10 +55,10 @@ export class WorkerRunner implements OnModuleInit, OnModuleDestroy {
     );
 
     this.worker.on('active', (job) => {
-      this.logger.log(`start job=${job.id} name=${job.name} attempt=${job.attemptsMade + 1}`);
+      this.logger.log(`start job=${job.id} name=${job.name} attempt=${job.attemptsMade + 1} rss=${heapMb()}mb`);
     });
     this.worker.on('completed', (job) => {
-      this.logger.log(`complete job=${job.id} name=${job.name}`);
+      this.logger.log(`complete job=${job.id} name=${job.name} rss=${heapMb()}mb`);
     });
     this.worker.on('failed', (job, err) => {
       this.logger.error(

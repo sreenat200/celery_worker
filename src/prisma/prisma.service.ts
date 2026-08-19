@@ -18,7 +18,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   constructor() {
     const connectionString = process.env.DATABASE_URL || '';
-    const max = Math.max(2, Math.min(parseInt(process.env.PG_POOL_MAX || '8', 10) || 8, 20));
+    const max = Math.max(1, Math.min(parseInt(process.env.PG_POOL_MAX || '2', 10) || 2, 8));
     const connectionTimeoutMillis = Math.max(
       2000,
       parseInt(process.env.PG_CONNECT_TIMEOUT_MS || '5000', 10) || 5000,
@@ -66,20 +66,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     });
 
     const adapter = new PrismaPg(pool);
-    super({
-      adapter,
-      log: [{ emit: 'event', level: 'query' }],
-    });
+    super({ adapter });
     this.pool = pool;
-
-    const threshold = parseInt(process.env.SLOW_QUERY_MS || '400', 10);
-    // Slow-query tracker surfaced via /api/internal/perf.
-    (this as any).$on('query', async (e: any) => {
-      if (e?.duration && e.duration > threshold) {
-        this.slowQueryCount++;
-        this.logger.warn(`Slow query (${e.duration}ms): ${String(e.query || '').slice(0, 180)}`);
-      }
-    });
 
     this.logger.log(
       `Postgres pool ready (max=${max}, connectTimeout=${connectionTimeoutMillis}ms, statementTimeout=${statementTimeout}ms, ssl=${Boolean(ssl)})`,
