@@ -4,6 +4,9 @@ import { MailerModule } from '@nestjs-modules/mailer';
 import { PrismaModule } from './prisma/prisma.module';
 import { StorageModule } from './storage/storage.module';
 import { WorkerRunner } from './worker.runner';
+import { AzureQwenService } from './ai/azure-qwen.service';
+import { AiResponseValidator } from './ai/ai-response.validator';
+import { AiGenerationRunner } from './ai/ai-generation.runner';
 
 @Module({
   imports: [
@@ -35,6 +38,11 @@ import { WorkerRunner } from './worker.runner';
     PrismaModule,
     StorageModule,
   ],
-  providers: [WorkerRunner],
+  providers: [
+    WorkerRunner,
+    AzureQwenService,
+    AiResponseValidator,
+    AiGenerationRunner,
+  ],
 })
 export class WorkerAppModule {}

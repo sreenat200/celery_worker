@@ -1,5 +1,5 @@
-/** Celery routed every media_worker.tasks.* job onto media_queue. Keep that name. */
 export const BULLMQ_MEDIA_QUEUE = 'media_queue';
+export const AI_CONTENT_GENERATION_QUEUE = 'ai-content-generation';
 
 export const BULLMQ_JOB = {
   PROCESS_IMAGE: 'process_image',
@@ -12,7 +12,54 @@ export const BULLMQ_JOB = {
   ABANDONED_CHECKOUT: 'abandoned_checkout',
   APP_WEBHOOK: 'app_webhook',
   WHATSAPP_SEND: 'whatsapp_send',
+  GENERATE_PRODUCT_DESCRIPTION: 'generate-product-description',
+  GENERATE_COLLECTION_DESCRIPTION: 'generate-collection-description',
 } as const;
+
+export const AI_JOB = {
+  GENERATE_PRODUCT_DESCRIPTION: 'generate-product-description',
+  GENERATE_COLLECTION_DESCRIPTION: 'generate-collection-description',
+} as const;
+
+export interface ProductDataPayload {
+  name: string;
+  color?: string;
+  material?: string;
+  style?: string;
+  size?: string;
+  targetAudience?: string;
+  category?: string;
+  subcategory?: string;
+  brand?: string;
+  vendor?: string;
+  productType?: string;
+}
+
+export interface CollectionDataPayload {
+  name: string;
+  category?: string;
+  purpose?: string;
+}
+
+export interface ProductDescriptionJobData {
+  jobId: string;
+  storeId: number;
+  userId: number;
+  productId?: number | null;
+  productData: ProductDataPayload;
+}
+
+export interface CollectionDescriptionJobData {
+  jobId: string;
+  storeId: number;
+  userId: number;
+  collectionId?: number | null;
+  collectionData: CollectionDataPayload;
+}
+
+export interface AiGenerationResult {
+  description: string;
+}
 
 export type BullmqJobName = (typeof BULLMQ_JOB)[keyof typeof BULLMQ_JOB];
 

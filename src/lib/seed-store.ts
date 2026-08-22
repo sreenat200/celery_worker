@@ -183,6 +183,47 @@ async function attachSeedImage(
   };
 }
 
+/**
+ * Idempotently restore seed product ↔ collection links for stores that were
+ * seeded before link creation existed (or where links were deleted).
+ */
+async function ensureSeedCollectionLinks(prisma: PrismaService, storeId: number) {
+  const collectionIds: Record<string, number> = {};
+  for (const col of SEED_COLLECTIONS) {
+    const found = await prisma.collection.findFirst({
+      where: { store_id: storeId, handle: `seed-${storeId}-${col.key}` },
+      select: { id: true },
+    });
+    if (found) collectionIds[col.key] = found.id;
+  }
+
+  let repaired = 0;
+  for (const prod of SEED_PRODUCTS) {
+    const product = await prisma.product.findFirst({
+      where: { store_id: storeId, sku: `SEED-${storeId}-${prod.sku_suffix}` },
+      select: { id: true },
+    });
+    if (!product) continue;
+    for (const ckey of prod.collection_keys) {
+      const cid = collectionIds[ckey];
+      if (!cid) continue;
+      const existingLink = await prisma.product_collections.findUnique({
+        where: { product_id_collection_id: { product_id: product.id, collection_id: cid } },
+      });
+      if (!existingLink) {
+        await prisma.product_collections.create({
+          data: { product_id: product.id, collection_id: cid },
+        });
+        repaired++;
+        logger.log(`Restored seed link product=${product.id} -> collection=${cid} (${ckey})`);
+      }
+    }
+  }
+  if (repaired === 0) {
+    logger.log(`Seed collection links already present for store ${storeId}`);
+  }
+}
+
 export async function seedDefaultStoreData(prisma: PrismaService, storage: StorageService, storeId: number) {
   storeId = Number(storeId);
   logger.log(`Starting seed_default_store_data for store_id=${storeId}`);
@@ -196,8 +237,9 @@ export async function seedDefaultStoreData(prisma: PrismaService, storage: Stora
   const existingCollections = await prisma.collection.count({
     where: { store_id: storeId, handle: { startsWith: `seed-${storeId}-` } },
   });
-  if (existingProducts >= 4 && existingCollections >= 4) {
-    logger.log(`Seed already complete for store ${storeId} — skipping`);
+  if (existingProducts >= SEED_PRODUCTS.length && existingCollections >= SEED_COLLECTIONS.length) {
+    logger.log(`Seed already complete for store ${storeId} — verifying collection links`);
+    await ensureSeedCollectionLinks(prisma, storeId);
     return { status: 'skipped', store_id: storeId, reason: 'already_seeded' };
   }
 
