@@ -40,9 +40,11 @@ export class AzureQwenService {
     return key.trim();
   }
 
-  async generateText(prompt: string, maxTokens: number = 256): Promise<string> {
+  async generateText(prompt: string, maxTokens?: number): Promise<string> {
     const endpoint = this.getEndpointUrl();
     const apiKey = this.getApiKey();
+
+    const resolvedMaxTokens = maxTokens ?? (parseInt(process.env.AZURE_MAX_TOKENS || '512', 10) || 512);
 
     const headers = {
       'Content-Type': 'application/json',
@@ -51,7 +53,7 @@ export class AzureQwenService {
 
     const payload = {
       prompt,
-      max_new_tokens: maxTokens,
+      max_new_tokens: resolvedMaxTokens,
       temperature: 0.7,
     };
 
@@ -61,7 +63,7 @@ export class AzureQwenService {
     );
 
     try {
-      this.logger.log(`Calling Azure ML Qwen endpoint (${endpoint.slice(0, 45)}...) [timeout=${timeoutMs}ms maxTokens=${maxTokens}]`);
+      this.logger.log(`Calling Azure ML Qwen endpoint (${endpoint.slice(0, 45)}...) [timeout=${timeoutMs}ms maxTokens=${resolvedMaxTokens}]`);
       const response = await axios.post(endpoint, payload, {
         headers,
         timeout: timeoutMs,
@@ -98,6 +100,7 @@ export class AzureQwenService {
       }
 
       if (!text || text.trim().length === 0) {
+        this.logger.warn(`Azure ML returned empty text. Raw response: ${JSON.stringify(data).slice(0, 300)}`);
         throw new AzureInferenceError('Model returned blank/empty text response', 502, true);
       }
 

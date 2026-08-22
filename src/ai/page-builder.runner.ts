@@ -95,7 +95,8 @@ export class PageBuilderRunner implements OnModuleInit, OnModuleDestroy {
 
     let rawResponse: string;
     try {
-      rawResponse = await this.azureQwen.generateText(prompt, 1000);
+      const maxTokens = parseInt(process.env.AZURE_MAX_TOKENS || '800', 10) || 800;
+      rawResponse = await this.azureQwen.generateText(prompt, maxTokens);
     } catch (err: any) {
       this.logger.error(`Azure Qwen inference error during page building: ${err.message}`);
       throw err;
@@ -113,51 +114,49 @@ export class PageBuilderRunner implements OnModuleInit, OnModuleDestroy {
   }
 
   private buildPageBuilderPrompt(userPrompt: string, sectionsJson: string): string {
-    return `<|im_start|>system
-You are a page-builder planning engine. Analyze the user's request and select the most appropriate sections from the provided Theme Editor section registry. You MUST use only the available section types, fields, blocks, defaults, and option values provided in the registry. Never invent sections, fields, values, resource IDs, products, collections, media IDs, menu IDs, or application capabilities. Return ONLY valid JSON.
+    return `You are an expert e-commerce storefront architect and page builder engine.
+Analyze the merchant's request and construct a comprehensive, high-converting storefront page layout with AT LEAST 7 sections.
 
-Section Selection Rules:
-1. Use only sections from the provided section registry.
-2. Select sections based on the user's intent to create a logical, high-converting storefront page structure.
-3. Order sections hierarchically (e.g. Hero -> Products / Collections -> Social Proof / Reviews / Features -> Testimonials / FAQ -> WhatsApp / Newsletter).
-4. Do not add unnecessary sections or duplicate sections unless requested.
-5. Use commerce sections (featured_products, collection_list, featured_product) for product requests.
-6. Use marketing sections (testimonials, newsletter, faq, countdown, instagram_stories) when relevant.
-7. Use frame_scroll_hero for frame-based scroll experiences, model_3d only for 3D model requirements, and product_template only for product detail pages.
-8. Output ONLY the JSON object conforming to the format below.<|im_end|>
-<|im_start|>user
-User Request:
+Merchant Request:
 "${userPrompt}"
 
-Available Sections Registry:
+Available Section Types & Settings:
 ${sectionsJson}
 
-Output JSON Format:
+Storefront Hierarchy & Section Ordering Rules:
+You MUST generate AT LEAST 7 relevant sections arranged in this exact high-converting storefront order:
+1. Header Banner / Hero: (hero, ecommerce_hero, split_hero, video_hero, slider_hero, minimal_hero, or frame_scroll_hero)
+2. Discovery / Categories / Stories: (collection_list or instagram_stories)
+3. Main Products Showcase: (featured_products or featured_collection)
+4. Spotlight / Promotion / Deals: (featured_product, image_banner, or countdown)
+5. Brand Storytelling / Features: (image_with_text, rich_text, video, or model_3d)
+6. Trust & Social Proof: (testimonials, product_reviews, or faq)
+7. Final CTA / Customer Engagement: (newsletter or contact_form)
+
+Section Output Rules:
+- Generate 7 to 9 sections strictly following the ordering rules above.
+- Tailor all headings, subheadings, and button copy specifically to the merchant's request.
+- Use only valid section types and settings from the Available Sections schema.
+- Output ONLY valid JSON matching the structure below without commentary.
+
+JSON Format:
 {
   "page": {
-    "title": "Clean, descriptive page title",
-    "purpose": "Concise summary of page purpose",
+    "title": "Storefront Home",
+    "purpose": "High-converting homepage",
     "sections": [
-      {
-        "id": "hero_1",
-        "type": "hero",
-        "settings": {
-          "title": "Headline",
-          "subtitle": "Description",
-          "hero_theme": "luxury",
-          "hero_layout": "overlay",
-          "content_position": "middle_center",
-          "alignment": "center",
-          "button_text": "Shop Now",
-          "button_link": "/collections"
-        },
-        "blocks": []
-      }
+      { "id": "hero_1", "type": "hero", "settings": { "title": "Elevate Your Style", "subtitle": "Curated premium fashion releases", "hero_theme": "luxury", "hero_layout": "overlay", "bg_image": "/images/themes/theme_hero_luxury_banner.jpg", "button_text": "Shop Collection", "button_link": "/collections" }, "blocks": [] },
+      { "id": "collection_list_1", "type": "collection_list", "settings": { "title": "Shop by Category" }, "blocks": [] },
+      { "id": "featured_products_1", "type": "featured_products", "settings": { "title": "Trending Best-Sellers", "subtitle": "Our most coveted pieces" }, "blocks": [] },
+      { "id": "image_banner_1", "type": "image_banner", "settings": { "heading": "Limited Season Offer", "subheading": "Up to 40% off online", "image": "/images/themes/theme_promo_banner.jpg", "button_text": "Claim Discount", "button_link": "/collections" }, "blocks": [] },
+      { "id": "image_with_text_1", "type": "image_with_text", "settings": { "heading": "Crafted with Purpose", "image": "/images/themes/theme_story_craftsmanship.jpg", "content": "<p>We source only the finest sustainable materials.</p>", "button_text": "Learn More" }, "blocks": [] },
+      { "id": "testimonials_1", "type": "testimonials", "settings": { "title": "Loved by Over 50,000+ Customers" }, "blocks": [{ "id": "t1", "type": "testimonial", "settings": { "author_name": "Sarah K.", "author_role": "Verified Customer", "quote": "<p>Incredible quality and fast delivery!</p>", "rating": "5" } }] },
+      { "id": "faq_1", "type": "faq", "settings": { "title": "Frequently Asked Questions" }, "blocks": [{ "id": "f1", "type": "faq_item", "settings": { "q": "What is the return policy?", "a": "<p>We offer 30-day hassle-free returns.</p>" } }] },
+      { "id": "newsletter_1", "type": "newsletter", "settings": { "heading": "Join the Inner Circle", "subheading": "Get 15% off your first purchase.", "button_text": "Subscribe" }, "blocks": [] }
     ]
   }
 }
-<|im_end|>
-<|im_start|>assistant
-{`;
+
+JSON Response:`;
   }
 }
