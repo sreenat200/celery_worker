@@ -29,7 +29,10 @@ export class PageBuilderRunner implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit() {
     const concurrency = Math.max(1, parseInt(process.env.PAGE_BUILDER_WORKER_CONCURRENCY || '2', 10) || 2);
-    const lockMs = 120_000;
+    const lockMs = Math.max(
+      120_000,
+      parseInt(process.env.PAGE_BUILDER_LOCK_MS || '240000', 10) || 240_000,
+    );
 
     this.worker = new Worker(
       PAGE_BUILDER_QUEUE,
@@ -92,7 +95,7 @@ export class PageBuilderRunner implements OnModuleInit, OnModuleDestroy {
 
     let rawResponse: string;
     try {
-      rawResponse = await this.azureQwen.generateText(prompt, 1500);
+      rawResponse = await this.azureQwen.generateText(prompt, 1000);
     } catch (err: any) {
       this.logger.error(`Azure Qwen inference error during page building: ${err.message}`);
       throw err;

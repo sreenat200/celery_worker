@@ -644,30 +644,37 @@ export const THEME_SECTION_REGISTRY: Record<string, SectionDefinition> = {
 
 /**
  * Serialize a clean, compact schema representation specifically tailored for LLM prompt context.
+ * Filters out layout chrome (header/footer) and condenses settings into a concise structure to minimize token count.
  */
 export function getSectionSchemaPromptContext(): string {
   const simplified: Record<string, any> = {};
 
   for (const [type, def] of Object.entries(THEME_SECTION_REGISTRY)) {
+    if (type === 'header' || type === 'footer') continue;
+
     const fieldsSummary: Record<string, any> = {};
     for (const [fieldName, fieldDef] of Object.entries(def.fields)) {
-      const summary: Record<string, any> = { type: fieldDef.type };
-      if (fieldDef.default !== undefined) summary.default = fieldDef.default;
-      if (fieldDef.options) summary.options = fieldDef.options.map((o) => o.value);
-      if (fieldDef.resourceType) summary.resourceType = fieldDef.resourceType;
-      fieldsSummary[fieldName] = summary;
+      if (fieldDef.options) {
+        fieldsSummary[fieldName] = fieldDef.options.map((o) => o.value);
+      } else if (fieldDef.type === 'toggle') {
+        fieldsSummary[fieldName] = 'boolean';
+      } else if (fieldDef.type === 'number') {
+        fieldsSummary[fieldName] = 'number';
+      } else if (fieldDef.type === 'color') {
+        fieldsSummary[fieldName] = 'hex_color';
+      } else {
+        fieldsSummary[fieldName] = fieldDef.type;
+      }
     }
 
     simplified[type] = {
       label: def.label,
       category: def.category,
-      description: def.description,
-      supports_blocks: Boolean(def.supportsBlocks),
-      block_type: def.blockType,
-      requires_app: def.requiresApp,
-      fields: fieldsSummary,
+      desc: def.description,
+      blocks: Boolean(def.supportsBlocks),
+      settings: fieldsSummary,
     };
   }
 
-  return JSON.stringify(simplified, null, 2);
+  return JSON.stringify(simplified);
 }

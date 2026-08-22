@@ -55,11 +55,16 @@ export class AzureQwenService {
       temperature: 0.7,
     };
 
+    const timeoutMs = Math.max(
+      30_000,
+      parseInt(process.env.AZURE_INFERENCE_TIMEOUT_MS || '180000', 10) || 180_000,
+    );
+
     try {
-      this.logger.log(`Calling Azure ML Qwen endpoint (${endpoint.slice(0, 45)}...)`);
+      this.logger.log(`Calling Azure ML Qwen endpoint (${endpoint.slice(0, 45)}...) [timeout=${timeoutMs}ms maxTokens=${maxTokens}]`);
       const response = await axios.post(endpoint, payload, {
         headers,
-        timeout: 60_000,
+        timeout: timeoutMs,
       });
 
       if (!response.data) {
@@ -67,15 +72,30 @@ export class AzureQwenService {
       }
 
       const data = response.data;
-      if (typeof data === 'object' && data.error) {
-        throw new AzureInferenceError(`Azure ML returned error: ${data.error}`, 502, true);
+      if (typeof data === 'object' && data !== null && (data as any).error) {
+        throw new AzureInferenceError(`Azure ML returned error: ${(data as any).error}`, 502, true);
       }
 
-      const text = typeof data === 'object' && typeof data.response === 'string'
-        ? data.response
-        : typeof data === 'string'
-          ? data
-          : JSON.stringify(data);
+      let text = '';
+      if (typeof data === 'string') {
+        text = data;
+      } else if (Array.isArray(data)) {
+        const first = data[0];
+        text = typeof first === 'string' ? first : first?.generated_text || first?.text || JSON.stringify(first);
+      } else if (typeof data === 'object' && data !== null) {
+        if (typeof (data as any).response === 'string') {
+          text = (data as any).response;
+        } else if (Array.isArray((data as any).choices) && (data as any).choices.length > 0) {
+          const choice = (data as any).choices[0];
+          text = choice.message?.content || choice.text || JSON.stringify(choice);
+        } else if (typeof (data as any).generated_text === 'string') {
+          text = (data as any).generated_text;
+        } else if (typeof (data as any).output === 'string') {
+          text = (data as any).output;
+        } else {
+          text = JSON.stringify(data);
+        }
+      }
 
       if (!text || text.trim().length === 0) {
         throw new AzureInferenceError('Model returned blank/empty text response', 502, true);
@@ -114,7 +134,7 @@ export class AzureQwenService {
         }
 
         if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT' || err.message.includes('timeout')) {
-          throw new AzureInferenceError('Azure ML request timed out after 60s', 504, true);
+          throw new AzureInferenceError(`Azure ML request timed out after ${Math.round(timeoutMs / 1000)}s`, 504, true);
         }
 
         if (err.code === 'ECONNRESET' || err.code === 'ENOTFOUND' || !err.response) {
