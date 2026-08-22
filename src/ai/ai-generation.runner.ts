@@ -128,7 +128,7 @@ export class AiGenerationRunner implements OnModuleInit, OnModuleDestroy {
 
   private buildProductPrompt(p: ProductDataPayload): string {
     const lines: string[] = [];
-    lines.push(`Name: ${p.name}`);
+    lines.push(`Product: ${p.name}`);
     if (p.color) lines.push(`Color: ${p.color}`);
     if (p.material) lines.push(`Material: ${p.material}`);
     if (p.style) lines.push(`Style: ${p.style}`);
@@ -140,52 +140,27 @@ export class AiGenerationRunner implements OnModuleInit, OnModuleDestroy {
     if (p.vendor) lines.push(`Vendor: ${p.vendor}`);
     if (p.productType) lines.push(`Product Type: ${p.productType}`);
 
-    return `You are an e-commerce product description generator.
-
-You MUST follow these rules strictly:
-- Use ONLY the product data provided below.
-- NEVER invent, assume, or change any product information.
-- NEVER change the product color.
-- NEVER change the material.
-- NEVER add features, claims, price, warranty, durability, customization, occasions, or specifications unless explicitly provided.
-- Generate English only.
-- Do NOT output markdown formatting (no asterisks, bold, or bullet points).
-- Do NOT explain your response or include notes.
-- Return ONLY valid JSON in this exact structure:
-{
-  "description": "..."
-}
-- The description must be an engaging, professional 40-60 word e-commerce description.
-
-PRODUCT DATA:
+    return `Write an engaging 40-50 word e-commerce product description for:
 ${lines.join('\n')}
 
-Write the final JSON output now:`;
+Include an inviting call-to-action to shop or add to cart.
+Do not output notes, code, or rules. Output only the description text.
+
+Description:`;
   }
 
   private buildCollectionPrompt(c: CollectionDataPayload): string {
     const lines: string[] = [];
-    lines.push(`Name: ${c.name}`);
+    lines.push(`Collection: ${c.name}`);
     if (c.category) lines.push(`Category: ${c.category}`);
     if (c.purpose) lines.push(`Purpose: ${c.purpose}`);
 
-    return `You are an e-commerce collection description generator.
-
-You MUST follow these rules strictly:
-- Use ONLY the collection data provided below.
-- NEVER invent products, attributes, discounts, prices, or specifications.
-- Generate English only.
-- Do NOT output markdown formatting (no asterisks, bold, or bullet points).
-- Do NOT explain your response or include notes.
-- Return ONLY valid JSON in this exact structure:
-{
-  "description": "..."
-}
-- Generate a concise, inviting, professional 30-50 word e-commerce collection description.
-
-COLLECTION DATA:
+    return `Write an engaging 30-45 word e-commerce collection description for:
 ${lines.join('\n')}
 
-Write the final JSON output now:`;
+Include an inviting call-to-action to explore the collection.
+Do not output notes, code, or rules. Output only the description text.
+
+Description:`;
   }
 }

@@ -20,7 +20,7 @@ export class AzureQwenService {
     const url = process.env.AZURE_ML_ENDPOINT_URL;
     if (!url) {
       throw new AzureInferenceError(
-        'AZURE_ML_ENDPOINT_URL is not configured in worker environment',
+        'AZURE_ML_ENDPOINT_URL is not configured in environment',
         500,
         false,
       );
@@ -32,7 +32,7 @@ export class AzureQwenService {
     const key = process.env.AZURE_ML_API_KEY;
     if (!key) {
       throw new AzureInferenceError(
-        'AZURE_ML_API_KEY is not configured in worker environment',
+        'AZURE_ML_API_KEY is not configured in environment',
         500,
         false,
       );
