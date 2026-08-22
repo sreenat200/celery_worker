@@ -7,6 +7,8 @@ import { WorkerRunner } from './worker.runner';
 import { AzureQwenService } from './ai/azure-qwen.service';
 import { AiResponseValidator } from './ai/ai-response.validator';
 import { AiGenerationRunner } from './ai/ai-generation.runner';
+import { PageBuilderValidator } from './ai/page-builder-validator.service';
+import { PageBuilderRunner } from './ai/page-builder.runner';
 
 @Module({
   imports: [
@@ -43,6 +45,8 @@ import { AiGenerationRunner } from './ai/ai-generation.runner';
     AzureQwenService,
     AiResponseValidator,
     AiGenerationRunner,
+    PageBuilderValidator,
+    PageBuilderRunner,
   ],
 })
 export class WorkerAppModule {}

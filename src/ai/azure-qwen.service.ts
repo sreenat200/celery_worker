@@ -17,10 +17,10 @@ export class AzureQwenService {
   private readonly logger = new Logger(AzureQwenService.name);
 
   private getEndpointUrl(): string {
-    const url = process.env.AZURE_ML_ENDPOINT_URL;
+    const url = process.env.AZURE_QWEN_ENDPOINT_URL || process.env.AZURE_ML_ENDPOINT_URL;
     if (!url) {
       throw new AzureInferenceError(
-        'AZURE_ML_ENDPOINT_URL is not configured in environment',
+        'AZURE_QWEN_ENDPOINT_URL (or AZURE_ML_ENDPOINT_URL) is not configured in environment',
         500,
         false,
       );
@@ -29,10 +29,10 @@ export class AzureQwenService {
   }
 
   private getApiKey(): string {
-    const key = process.env.AZURE_ML_API_KEY;
+    const key = process.env.AZURE_QWEN_API_KEY || process.env.AZURE_ML_API_KEY;
     if (!key) {
       throw new AzureInferenceError(
-        'AZURE_ML_API_KEY is not configured in environment',
+        'AZURE_QWEN_API_KEY (or AZURE_ML_API_KEY) is not configured in environment',
         500,
         false,
       );

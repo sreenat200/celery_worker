@@ -1,5 +1,6 @@
 export const BULLMQ_MEDIA_QUEUE = 'media_queue';
 export const AI_CONTENT_GENERATION_QUEUE = 'ai-content-generation';
+export const PAGE_BUILDER_QUEUE = 'page-builder';
 
 export const BULLMQ_JOB = {
   PROCESS_IMAGE: 'process_image',
@@ -14,12 +15,51 @@ export const BULLMQ_JOB = {
   WHATSAPP_SEND: 'whatsapp_send',
   GENERATE_PRODUCT_DESCRIPTION: 'generate-product-description',
   GENERATE_COLLECTION_DESCRIPTION: 'generate-collection-description',
+  GENERATE_PAGE_BLUEPRINT: 'generate-page-blueprint',
 } as const;
 
 export const AI_JOB = {
   GENERATE_PRODUCT_DESCRIPTION: 'generate-product-description',
   GENERATE_COLLECTION_DESCRIPTION: 'generate-collection-description',
+  GENERATE_PAGE_BLUEPRINT: 'generate-page-blueprint',
 } as const;
+
+export const PAGE_BUILDER_JOB = {
+  GENERATE_PAGE_BLUEPRINT: 'generate-page-blueprint',
+} as const;
+
+export interface PageBuilderJobData {
+  jobId: string;
+  storeId: number;
+  userId: number;
+  userPrompt: string;
+  themeId?: string | number | null;
+  requestId?: string | null;
+}
+
+export interface GeneratedSectionBlock {
+  id?: string;
+  type?: string;
+  settings?: Record<string, any>;
+}
+
+export interface GeneratedSectionInstance {
+  id: string;
+  type: string;
+  title?: string;
+  settings: Record<string, any>;
+  blocks?: GeneratedSectionBlock[];
+}
+
+export interface PageBlueprint {
+  title: string;
+  purpose: string;
+  sections: GeneratedSectionInstance[];
+}
+
+export interface PageBuilderResult {
+  blueprint: PageBlueprint;
+}
 
 export interface ProductDataPayload {
   name: string;
