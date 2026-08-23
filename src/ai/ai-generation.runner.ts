@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
-import { Worker, type Job } from 'bullmq';
+import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { createBullmqConnection } from '../jobs/bullmq.connection';
 import {
   AI_CONTENT_GENERATION_QUEUE,
@@ -10,7 +10,7 @@ import {
   type ProductDataPayload,
   type CollectionDataPayload,
 } from '../jobs/bullmq.constants';
-import { AzureQwenService } from './azure-qwen.service';
+import { DeepSeekInferenceError, DeepSeekService } from './deepseek.service';
 import { AiResponseValidator } from './ai-response.validator';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -25,7 +25,7 @@ export class AiGenerationRunner implements OnModuleInit, OnModuleDestroy {
   private worker: Worker | null = null;
 
   constructor(
-    private readonly azureQwen: AzureQwenService,
+    private readonly deepSeek: DeepSeekService,
     private readonly validator: AiResponseValidator,
     private readonly prisma: PrismaService,
   ) {}
@@ -99,11 +99,11 @@ export class AiGenerationRunner implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    const prompt = this.buildProductPrompt(productData);
-    const rawResponse = await this.azureQwen.generateText(prompt, 256);
-    const validated = this.validator.validateAndExtract(rawResponse, 'product');
-
-    return validated;
+    const rawResponse = await this.callDeepSeek(
+      this.buildDescriptionSystemPrompt('product'),
+      this.buildProductPrompt(productData),
+    );
+    return this.validator.validateAndExtract(rawResponse, 'product');
   }
 
   private async handleCollectionDescription(data: CollectionDescriptionJobData): Promise<AiGenerationResult> {
@@ -119,11 +119,43 @@ export class AiGenerationRunner implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    const prompt = this.buildCollectionPrompt(collectionData);
-    const rawResponse = await this.azureQwen.generateText(prompt, 256);
-    const validated = this.validator.validateAndExtract(rawResponse, 'collection');
+    const rawResponse = await this.callDeepSeek(
+      this.buildDescriptionSystemPrompt('collection'),
+      this.buildCollectionPrompt(collectionData),
+    );
+    return this.validator.validateAndExtract(rawResponse, 'collection');
+  }
 
-    return validated;
+  private async callDeepSeek(systemPrompt: string, userPrompt: string): Promise<string> {
+    try {
+      return await this.deepSeek.generateChat(
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        {
+          maxTokens: 500,
+          temperature: 0.3,
+          jsonMode: true,
+          disableThinking: true,
+        },
+      );
+    } catch (err: any) {
+      if (err instanceof DeepSeekInferenceError && !err.isTransient) {
+        throw new UnrecoverableError(err.message);
+      }
+      throw err;
+    }
+  }
+
+  private buildDescriptionSystemPrompt(kind: 'product' | 'collection'): string {
+    return `You write professional, natural, SEO-friendly English ${kind} descriptions for an ecommerce catalog.
+Use ONLY the facts provided in the user message.
+Never invent product information.
+Never change or invent color, material, size, style, features, or specifications.
+Never invent price, discount, warranty, durability, certifications, or unsupported claims.
+Do not use markdown, bullets, or notes.
+Return valid JSON only in this exact shape: {"description":"..."}`;
   }
 
   private buildProductPrompt(p: ProductDataPayload): string {
@@ -140,13 +172,10 @@ export class AiGenerationRunner implements OnModuleInit, OnModuleDestroy {
     if (p.vendor) lines.push(`Vendor: ${p.vendor}`);
     if (p.productType) lines.push(`Product Type: ${p.productType}`);
 
-    return `Write an engaging 40-50 word e-commerce product description for:
+    return `Write a professional 40-50 word ecommerce product description from only these facts:
 ${lines.join('\n')}
 
-Include an inviting call-to-action to shop or add to cart.
-Do not output notes, code, or rules. Output only the description text.
-
-Description:`;
+Return JSON only: {"description":"..."}`;
   }
 
   private buildCollectionPrompt(c: CollectionDataPayload): string {
@@ -155,12 +184,9 @@ Description:`;
     if (c.category) lines.push(`Category: ${c.category}`);
     if (c.purpose) lines.push(`Purpose: ${c.purpose}`);
 
-    return `Write an engaging 30-45 word e-commerce collection description for:
+    return `Write a professional 30-45 word ecommerce collection description from only these facts:
 ${lines.join('\n')}
 
-Include an inviting call-to-action to explore the collection.
-Do not output notes, code, or rules. Output only the description text.
-
-Description:`;
+Return JSON only: {"description":"..."}`;
   }
 }

@@ -5,10 +5,12 @@ import { PrismaModule } from './prisma/prisma.module';
 import { StorageModule } from './storage/storage.module';
 import { WorkerRunner } from './worker.runner';
 import { AzureQwenService } from './ai/azure-qwen.service';
+import { DeepSeekService } from './ai/deepseek.service';
 import { AiResponseValidator } from './ai/ai-response.validator';
 import { AiGenerationRunner } from './ai/ai-generation.runner';
 import { PageBuilderValidator } from './ai/page-builder-validator.service';
 import { PageBuilderRunner } from './ai/page-builder.runner';
+import { AiCustomSectionRunner } from './ai/ai-custom-section.runner';
 
 @Module({
   imports: [
@@ -43,10 +45,12 @@ import { PageBuilderRunner } from './ai/page-builder.runner';
   providers: [
     WorkerRunner,
     AzureQwenService,
+    DeepSeekService,
     AiResponseValidator,
     AiGenerationRunner,
     PageBuilderValidator,
     PageBuilderRunner,
+    AiCustomSectionRunner,
   ],
 })
 export class WorkerAppModule {}

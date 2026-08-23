@@ -733,6 +733,7 @@ model store {
   user                   user[]
   whatsapp_config        whatsapp_config?
   wishlist_item          wishlist_item[]
+  ai_custom_section      ai_custom_section[]
 }
 
 model store_notification {
@@ -824,6 +825,9 @@ model subscription {
   cashfree_subscription_id String?                @unique @db.VarChar(200)
   cashfree_plan_id         String?                @db.VarChar(200)
   cashfree_customer_id     String?                @db.VarChar(200)
+  razorpay_subscription_id String?                @unique @db.VarChar(200)
+  razorpay_plan_id         String?                @db.VarChar(200)
+  razorpay_customer_id     String?                @db.VarChar(200)
   payment_method           String?                @db.VarChar(50)
   autopay_active           Boolean?
   trial_start              DateTime?              @db.Timestamp(6)
@@ -845,35 +849,40 @@ model subscription {
   subscription_invoice     subscription_invoice[]
 
   @@index([plan_id], map: "ix_subscription_plan_id")
+  @@index([razorpay_subscription_id], map: "ix_subscription_razorpay_sub_id")
 }
 
 model subscription_invoice {
-  id                   Int          @id @default(autoincrement())
-  subscription_id      Int
-  store_id             Int
-  invoice_number       String?      @unique @db.VarChar(50)
-  amount               Float
-  currency             String?      @db.VarChar(10)
-  status               String?      @db.VarChar(30)
-  cashfree_payment_id  String?      @db.VarChar(200)
-  cashfree_order_id    String?      @db.VarChar(200)
-  payment_method       String?      @db.VarChar(50)
-  payment_gateway      String?      @db.VarChar(50)
-  billing_period_start DateTime?    @db.Timestamp(6)
-  billing_period_end   DateTime?    @db.Timestamp(6)
-  due_date             DateTime?    @db.Timestamp(6)
-  paid_at              DateTime?    @db.Timestamp(6)
-  failed_at            DateTime?    @db.Timestamp(6)
-  failure_reason       String?
-  pdf_url              String?      @db.VarChar(500)
-  notes                String?
-  created_at           DateTime?    @db.Timestamp(6)
-  updated_at           DateTime?    @db.Timestamp(6)
-  store                store        @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  subscription         subscription @relation(fields: [subscription_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id                       Int          @id @default(autoincrement())
+  subscription_id          Int
+  store_id                 Int
+  invoice_number           String?      @unique @db.VarChar(50)
+  amount                   Float
+  currency                 String?      @db.VarChar(10)
+  status                   String?      @db.VarChar(30)
+  cashfree_payment_id      String?      @db.VarChar(200)
+  cashfree_order_id        String?      @db.VarChar(200)
+  razorpay_payment_id      String?      @db.VarChar(200)
+  razorpay_invoice_id      String?      @db.VarChar(200)
+  razorpay_subscription_id String?      @db.VarChar(200)
+  payment_method           String?      @db.VarChar(50)
+  payment_gateway          String?      @db.VarChar(50)
+  billing_period_start     DateTime?    @db.Timestamp(6)
+  billing_period_end       DateTime?    @db.Timestamp(6)
+  due_date                 DateTime?    @db.Timestamp(6)
+  paid_at                  DateTime?    @db.Timestamp(6)
+  failed_at                DateTime?    @db.Timestamp(6)
+  failure_reason           String?
+  pdf_url                  String?      @db.VarChar(500)
+  notes                    String?
+  created_at               DateTime?    @db.Timestamp(6)
+  updated_at               DateTime?    @db.Timestamp(6)
+  store                    store        @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  subscription             subscription @relation(fields: [subscription_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([store_id], map: "ix_subscription_invoice_store_id")
   @@index([subscription_id], map: "ix_subscription_invoice_subscription_id")
+  @@index([razorpay_payment_id], map: "ix_subscription_invoice_razorpay_payment_id")
 }
 
 model subscription_plan {
@@ -891,6 +900,8 @@ model subscription_plan {
   display_order            Int?
   cashfree_plan_id_monthly String?        @db.VarChar(100)
   cashfree_plan_id_yearly  String?        @db.VarChar(100)
+  razorpay_plan_id_monthly String?        @db.VarChar(100)
+  razorpay_plan_id_yearly  String?        @db.VarChar(100)
   max_products             Int?
   max_orders_monthly       Int?
   max_storage_gb           Float?
@@ -909,14 +920,19 @@ model subscription_plan {
 
 model subscription_webhook_log {
   id                 Int       @id @default(autoincrement())
-  cashfree_event_id  String    @unique @db.VarChar(200)
+  event_id           String?   @unique @db.VarChar(200)
+  gateway            String?   @default("razorpay") @db.VarChar(50)
+  cashfree_event_id  String?   @unique @db.VarChar(200)
   event_type         String?   @db.VarChar(100)
+  subscription_id    String?   @db.VarChar(200)
   subscription_id_cf String?   @db.VarChar(200)
   raw_payload        String?
   processed          Boolean?
   processing_error   String?
   received_at        DateTime? @db.Timestamp(6)
   processed_at       DateTime? @db.Timestamp(6)
+
+  @@index([event_id], map: "ix_sub_webhook_log_event_id")
 }
 
 model support_chat_message {
@@ -1143,4 +1159,125 @@ model common_theme_asset {
   @@unique([theme_id, asset_key])
   @@index([media_id])
   @@index([theme_id])
+}
+
+model platform_app {
+  id             Int                @id @default(autoincrement())
+  name           String             @db.VarChar(120)
+  slug           String             @unique @db.VarChar(80)
+  description    String?
+  developer_name String?            @db.VarChar(120)
+  app_url        String?            @db.VarChar(500)
+  redirect_urls  Json?
+  client_id      String             @unique @db.VarChar(80)
+  client_secret  String             @db.VarChar(255)
+  scopes         Json
+  status         String             @default("published") @db.VarChar(30)
+  version        String             @default("1.0.0") @db.VarChar(30)
+  category       String?            @db.VarChar(60)
+  icon           String?
+  screenshots    Json?
+  pricing        String?            @db.VarChar(60)
+  featured       Boolean            @default(false)
+  created_at     DateTime?          @default(now()) @db.Timestamp(6)
+  installations  app_installation[]
+  extensions     app_extension[]
+
+  @@index([status, category])
+}
+
+model app_installation {
+  id                Int             @id @default(autoincrement())
+  app_id            Int
+  store_id          Int
+  status            String          @default("installed") @db.VarChar(30)
+  access_token_hash String?         @db.VarChar(128)
+  scopes            Json
+  settings          Json?
+  installed_version String?         @db.VarChar(30)
+  installed_at      DateTime?       @default(now()) @db.Timestamp(6)
+  uninstalled_at    DateTime?       @db.Timestamp(6)
+  app               platform_app    @relation(fields: [app_id], references: [id], onDelete: Cascade)
+  webhooks          app_webhook[]
+  extensions        app_extension[]
+
+  @@unique([app_id, store_id])
+  @@index([store_id, status])
+}
+
+model app_webhook {
+  id              Int                    @id @default(autoincrement())
+  installation_id Int
+  store_id        Int
+  topic           String                 @db.VarChar(80)
+  target_url      String                 @db.VarChar(500)
+  secret          String                 @db.VarChar(128)
+  created_at      DateTime?              @default(now()) @db.Timestamp(6)
+  installation    app_installation       @relation(fields: [installation_id], references: [id], onDelete: Cascade)
+  deliveries      app_webhook_delivery[]
+
+  @@index([store_id, topic])
+  @@index([installation_id])
+}
+
+model app_webhook_delivery {
+  id         Int         @id @default(autoincrement())
+  webhook_id Int
+  store_id   Int
+  event      String      @db.VarChar(80)
+  status     String      @default("pending") @db.VarChar(30)
+  attempts   Int         @default(0)
+  last_error String?
+  created_at DateTime?   @default(now()) @db.Timestamp(6)
+  webhook    app_webhook @relation(fields: [webhook_id], references: [id], onDelete: Cascade)
+
+  @@index([webhook_id, status])
+}
+
+model app_extension {
+  id              Int               @id @default(autoincrement())
+  app_id          Int
+  installation_id Int?
+  store_id        Int
+  point           String            @db.VarChar(80)
+  config          Json?
+  enabled         Boolean           @default(true)
+  app             platform_app      @relation(fields: [app_id], references: [id], onDelete: Cascade)
+  installation    app_installation? @relation(fields: [installation_id], references: [id], onDelete: Cascade)
+
+  @@index([store_id, point])
+}
+
+model ai_custom_section {
+  id                Int       @id @default(autoincrement())
+  store_id          Int
+  theme_id          Int?
+  page_id           Int?
+  name              String    @db.VarChar(255)
+  prompt            String    @db.Text
+  blueprint         Json?
+  status            String    @default("generating") @db.VarChar(50)
+  generation_job_id String?   @db.VarChar(100)
+  model_name        String?   @db.VarChar(50)
+  error_code        String?   @db.VarChar(50)
+  error_message     String?   @db.Text
+  created_by        Int?
+  updated_by        Int?
+  created_at        DateTime? @default(now()) @db.Timestamp(6)
+  updated_at        DateTime? @default(now()) @db.Timestamp(6)
+  store             store     @relation(fields: [store_id], references: [id], onDelete: Cascade)
+  versions          ai_custom_section_version[]
+
+  @@index([store_id])
+}
+
+model ai_custom_section_version {
+  id         Int       @id @default(autoincrement())
+  section_id Int
+  blueprint  Json
+  created_by Int?
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+  section    ai_custom_section @relation(fields: [section_id], references: [id], onDelete: Cascade)
+
+  @@index([section_id])
 }

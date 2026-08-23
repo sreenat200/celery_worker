@@ -19,6 +19,24 @@ export class AiResponseValidator {
 
     let text = rawText.trim();
 
+    if (text.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(text.replace(/```json/gi, '').replace(/```/g, '').trim());
+        const desc = parsed?.description || parsed?.product_description || parsed?.collection_description;
+        if (typeof desc !== 'string' || !desc.trim()) {
+          throw new AiValidationError('JSON response did not contain a valid description');
+        }
+        const cleaned = this.finalizeText(this.stripInlinePreambles(desc.trim()));
+        if (cleaned.length < 15) {
+          throw new AiValidationError('Generated description is empty or too short');
+        }
+        return { description: cleaned };
+      } catch (err) {
+        if (err instanceof AiValidationError) throw err;
+        throw new AiValidationError('AI output is not valid JSON');
+      }
+    }
+
     // 1. Look for explicit JSON: {"description": "..."}
     const jsonDescMatch = text.match(/"(?:product_)?description"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"?/i);
     if (jsonDescMatch && jsonDescMatch[1]) {
