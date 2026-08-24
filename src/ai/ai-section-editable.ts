@@ -98,6 +98,20 @@ export const AI_CHROME_SCHEMA: Record<string, Field> = {
     ],
   },
   heading_font: { type: 'font', label: 'Heading font', category: 'typography', default: 'Inter' },
+  heading_font_family: { type: 'font', label: 'Heading font family', category: 'typography', default: 'Inter' },
+  body_font_family: { type: 'font', label: 'Body font family', category: 'typography', default: 'Inter' },
+  font_weight: {
+    type: 'select',
+    label: 'Heading weight',
+    category: 'typography',
+    default: '700',
+    options: [
+      { label: 'Regular', value: '400' },
+      { label: 'Medium', value: '500' },
+      { label: 'Semibold', value: '600' },
+      { label: 'Bold', value: '700' },
+    ],
+  },
   heading_size: { type: 'number', label: 'Heading size', category: 'typography', default: '36' },
   heading_weight: {
     type: 'select',
@@ -138,11 +152,50 @@ export const AI_CHROME_SCHEMA: Record<string, Field> = {
   },
   bg_color: { type: 'color', label: 'Background color', category: 'style', default: '#ffffff' },
   text_color: { type: 'color', label: 'Text color', category: 'style', default: '#111827' },
+  heading_color: { type: 'color', label: 'Heading color', category: 'style', default: '#111827' },
   button_bg: { type: 'color', label: 'Button color', category: 'button', default: '#111827' },
   button_text_color: { type: 'color', label: 'Button text color', category: 'button', default: '#ffffff' },
+  button_border_color: { type: 'color', label: 'Button border color', category: 'button', default: '#111827' },
+  button_border_width: { type: 'number', label: 'Button border width', category: 'button', default: '0' },
+  button_radius: { type: 'number', label: 'Button radius', category: 'button', default: '8' },
+  button_width: {
+    type: 'select',
+    label: 'Button width',
+    category: 'button',
+    default: 'auto',
+    options: [
+      { label: 'Auto', value: 'auto' },
+      { label: 'Full', value: 'full' },
+    ],
+  },
+  button_height: { type: 'number', label: 'Button height', category: 'button', default: '44' },
   border_color: { type: 'color', label: 'Border color', category: 'style', default: '#e5e7eb' },
   border_width: { type: 'number', label: 'Border width', category: 'style', default: '0' },
-  border_radius: { type: 'number', label: 'Corner radius', category: 'style', default: '0' },
+  border_style: {
+    type: 'select',
+    label: 'Border style',
+    category: 'style',
+    default: 'solid',
+    options: [
+      { label: 'Solid', value: 'solid' },
+      { label: 'Dashed', value: 'dashed' },
+      { label: 'None', value: 'none' },
+    ],
+  },
+  border_radius: { type: 'number', label: 'Corner radius', category: 'style', default: '12' },
+  overlay_opacity: { type: 'number', label: 'Overlay %', category: 'style', default: '0' },
+  gradient: {
+    type: 'select',
+    label: 'Gradient',
+    category: 'style',
+    default: 'none',
+    options: [
+      { label: 'None', value: 'none' },
+      { label: 'Dark', value: 'dark' },
+      { label: 'Gold', value: 'gold' },
+      { label: 'Fade', value: 'fade' },
+    ],
+  },
   shadow: {
     type: 'select',
     label: 'Shadow',
@@ -167,6 +220,19 @@ export const AI_CHROME_SCHEMA: Record<string, Field> = {
   },
   mobile_gap: { type: 'number', label: 'Mobile gap', category: 'mobile', default: '20' },
   mobile_padding: { type: 'number', label: 'Mobile padding', category: 'mobile', default: '32' },
+  mobile_padding_y: { type: 'number', label: 'Mobile padding Y', category: 'mobile', default: '32' },
+  mobile_heading_size: { type: 'number', label: 'Mobile heading size', category: 'mobile', default: '28' },
+  mobile_button_width: {
+    type: 'select',
+    label: 'Mobile button width',
+    category: 'mobile',
+    default: 'auto',
+    options: [
+      { label: 'Auto', value: 'auto' },
+      { label: 'Full', value: 'full' },
+    ],
+  },
+  margin: { type: 'number', label: 'Margin', category: 'layout', default: '0' },
   mobile_text_align: {
     type: 'select',
     label: 'Mobile text align',
@@ -218,6 +284,35 @@ function inferContent(types: Set<string>): Record<string, Field> {
     fields.collection_image = { type: 'image', label: 'Collection image', category: 'content', default: '' };
     fields.collection_id = { type: 'resourcePicker', label: 'Collection', category: 'content', resourceType: 'collection' };
   }
+  if (types.has('accordion') || types.has('newsletter') || types.has('countdown') || types.has('stories') || types.has('contact_form')) {
+    fields.heading = fields.heading || { type: 'text', label: 'Heading', category: 'content', default: 'Heading' };
+  }
+  if (types.has('newsletter')) {
+    fields.placeholder = { type: 'text', label: 'Email placeholder', category: 'content', default: 'Email address' };
+    fields.button_text = fields.button_text || { type: 'text', label: 'Button label', category: 'button', default: 'Subscribe' };
+  }
+  if (types.has('countdown')) {
+    fields.end_date = { type: 'text', label: 'End date', category: 'content', default: '' };
+  }
+  if (types.has('model3d')) {
+    fields.model = { type: 'text', label: '3D model URL', category: 'content', default: '' };
+  }
+  if (types.has('contact_form')) {
+    fields.button_text = fields.button_text || { type: 'text', label: 'Button label', category: 'button', default: 'Send' };
+  }
+  if (types.has('page_content')) {
+    fields.pageSlug = { type: 'resourcePicker', label: 'Page', category: 'content', resourceType: 'page' };
+  }
+  if (types.has('reviews') || types.has('product_detail')) {
+    fields.product_id = { type: 'resourcePicker', label: 'Product', category: 'content', resourceType: 'product' };
+  }
+  if (types.has('collection_grid')) {
+    fields.collection_id = { type: 'resourcePicker', label: 'Collection', category: 'content', resourceType: 'collection' };
+    fields.limit = { type: 'number', label: 'Product count', category: 'content', default: '4' };
+  }
+  if (types.has('slider')) {
+    fields.interval = { type: 'number', label: 'Autoplay ms', category: 'content', default: '4000' };
+  }
   return fields;
 }
 
@@ -246,10 +341,9 @@ export function mergeEditableBlueprint(input: {
     delete schema.image_width;
     delete schema.mobile_image_width;
   }
-  if (!types.has('grid') && !types.has('product') && !types.has('collection')) delete schema.columns;
-  if (!types.has('button')) {
-    delete schema.button_bg;
-    delete schema.button_text_color;
+  if (!types.has('grid') && !types.has('product') && !types.has('collection') && !types.has('icon') && !types.has('collection_grid')) delete schema.columns;
+  if (!types.has('button') && !types.has('newsletter') && !types.has('contact_form') && !types.has('slider')) {
+    /* keep button chrome so extracted styles remain editable */
   }
   if (!types.has('row') && !types.has('carousel')) delete schema.direction;
 

@@ -12,6 +12,43 @@ export const AI_COMPONENT_TYPES = [
   'product',
   'collection',
   'carousel',
+  'accordion',
+  'accordion_item',
+  'newsletter',
+  'countdown',
+  'stories',
+  'model3d',
+  'contact_form',
+  'icon',
+  'page_content',
+  'reviews',
+  'collection_grid',
+  'slider',
+  'slide',
+  'frame_scroll',
+  'product_detail',
+  'tabs',
+  'tab',
+  'filters',
+  'comparison_table',
+  'table_row',
+  'sticky_split',
+  'timeline',
+  'timeline_item',
+  'bento',
+  'bento_cell',
+  'masonry',
+  'before_after',
+  'hotspot',
+  'hotspot_pin',
+  'marquee',
+  'parallax',
+  'recommend',
+  'specs',
+  'nav',
+  'size_guide',
+  'whatsapp',
+  'shipping',
 ] as const;
 
 export type AiComponentType = (typeof AI_COMPONENT_TYPES)[number];
@@ -39,6 +76,19 @@ export const LAYOUT_COMPONENT_TYPES = new Set<AiComponentType>([
   'grid',
   'stack',
   'carousel',
+  'accordion',
+  'slider',
+  'tabs',
+  'tab',
+  'comparison_table',
+  'sticky_split',
+  'timeline',
+  'bento',
+  'bento_cell',
+  'masonry',
+  'hotspot',
+  'marquee',
+  'parallax',
 ]);
 
 export const LEAF_COMPONENT_TYPES = new Set<AiComponentType>([
@@ -49,6 +99,30 @@ export const LEAF_COMPONENT_TYPES = new Set<AiComponentType>([
   'button',
   'product',
   'collection',
+  'accordion_item',
+  'newsletter',
+  'countdown',
+  'stories',
+  'model3d',
+  'contact_form',
+  'icon',
+  'page_content',
+  'reviews',
+  'collection_grid',
+  'slide',
+  'frame_scroll',
+  'product_detail',
+  'filters',
+  'table_row',
+  'timeline_item',
+  'before_after',
+  'hotspot_pin',
+  'recommend',
+  'specs',
+  'nav',
+  'size_guide',
+  'whatsapp',
+  'shipping',
 ]);
 
 export const COMPONENT_ALIASES: Record<string, AiComponentType> = {
@@ -63,7 +137,6 @@ export const COMPONENT_ALIASES: Record<string, AiComponentType> = {
   vstack: 'stack',
   vstacking: 'stack',
   slider: 'carousel',
-  slideshow: 'carousel',
   h1: 'heading',
   h2: 'heading',
   h3: 'heading',
@@ -85,6 +158,70 @@ export const COMPONENT_ALIASES: Record<string, AiComponentType> = {
   productcard: 'product',
   'collection-card': 'collection',
   collectioncard: 'collection',
+  faq: 'accordion',
+  faqs: 'accordion',
+  collapse: 'accordion',
+  faq_item: 'accordion_item',
+  accordionitem: 'accordion_item',
+  subscribe: 'newsletter',
+  signup: 'newsletter',
+  timer: 'countdown',
+  countdown_timer: 'countdown',
+  story: 'stories',
+  instagram: 'stories',
+  instagram_stories: 'stories',
+  gltf: 'model3d',
+  glb: 'model3d',
+  '3d': 'model3d',
+  '3d_model': 'model3d',
+  model_3d: 'model3d',
+  contact: 'contact_form',
+  form: 'contact_form',
+  feature: 'icon',
+  feature_icon: 'icon',
+  icons: 'icon',
+  page: 'page_content',
+  cms: 'page_content',
+  page_body: 'page_content',
+  review: 'reviews',
+  product_reviews: 'reviews',
+  collection_products: 'collection_grid',
+  featured_collection: 'collection_grid',
+  collection_product_grid: 'collection_grid',
+  slideshow: 'slider',
+  slider_hero: 'slider',
+  hero_slider: 'slider',
+  slide_item: 'slide',
+  frame_scroll_hero: 'frame_scroll',
+  frames: 'frame_scroll',
+  product_template: 'product_detail',
+  pdp: 'product_detail',
+  product_page: 'product_detail',
+  tab: 'tab',
+  tabbed: 'tabs',
+  ticker: 'marquee',
+  compare: 'before_after',
+  comparison: 'comparison_table',
+  table: 'comparison_table',
+  filter: 'filters',
+  filter_bar: 'filters',
+  sticky: 'sticky_split',
+  masonry_grid: 'masonry',
+  bento_grid: 'bento',
+  pin: 'hotspot_pin',
+  spots: 'hotspot',
+  related: 'recommend',
+  recommendations: 'recommend',
+  related_products: 'recommend',
+  specifications: 'specs',
+  features: 'specs',
+  navigation: 'nav',
+  menu: 'nav',
+  sizechart: 'size_guide',
+  size_chart: 'size_guide',
+  wa: 'whatsapp',
+  shipping_cod: 'shipping',
+  cod: 'shipping',
 };
 
 export const ALLOWED_PROPS: Record<AiComponentType, readonly string[]> = {
@@ -101,6 +238,43 @@ export const ALLOWED_PROPS: Record<AiComponentType, readonly string[]> = {
   button: ['label', 'text', 'button_text', 'content', 'link', 'url', 'href', 'button_link'],
   product: ['title', 'price', 'image', 'src', 'url', 'link', 'button_label', 'showPrice', 'showAddToCart'],
   collection: ['title', 'image', 'src', 'url', 'link', 'itemCount'],
+  accordion: ['title'],
+  accordion_item: ['question', 'answer', 'open'],
+  newsletter: ['heading', 'description', 'placeholder', 'button_text', 'success_message', 'error_message'],
+  countdown: ['title', 'end_date'],
+  stories: ['heading'],
+  model3d: ['src', 'url', 'model', 'model_url', 'heading'],
+  contact_form: ['heading', 'button_text', 'success_message', 'error_message'],
+  icon: ['name', 'heading', 'description', 'label'],
+  page_content: ['page', 'pageSlug', 'slug'],
+  reviews: ['product_id', 'heading'],
+  collection_grid: ['collection_id', 'limit', 'heading', 'columns'],
+  slider: ['autoplay', 'interval'],
+  slide: ['heading', 'description', 'image', 'video', 'button_text', 'button_link'],
+  frame_scroll: ['heading', 'description'],
+  product_detail: ['product_id'],
+  tabs: ['active'],
+  tab: ['label'],
+  filters: ['collection_id', 'sort'],
+  comparison_table: ['highlight'],
+  table_row: ['label', 'c1', 'c2', 'c3', 'c4'],
+  sticky_split: ['side'],
+  timeline: ['orientation'],
+  timeline_item: ['date', 'heading', 'description', 'image'],
+  bento: ['columns'],
+  bento_cell: ['colSpan', 'rowSpan'],
+  masonry: ['columns'],
+  before_after: ['before', 'after', 'position', 'orientation'],
+  hotspot: ['src', 'image'],
+  hotspot_pin: ['x', 'y', 'label', 'heading', 'description', 'product_id'],
+  marquee: ['text', 'direction', 'speed'],
+  parallax: ['src', 'image', 'speed'],
+  recommend: ['product_id', 'limit'],
+  specs: ['product_id'],
+  nav: ['collections_label'],
+  size_guide: ['heading'],
+  whatsapp: ['phone', 'button_text', 'greeting', 'position'],
+  shipping: ['heading', 'cod_message', 'button_text'],
 };
 
 export const ALLOWED_STYLE_PROPERTIES = new Set([
@@ -191,9 +365,12 @@ export const UNSAFE_CONTENT_PATTERN =
 
 export const BINDING_PATTERN = /\{\{settings\.([a-zA-Z][a-zA-Z0-9_]*)\}\}/g;
 
-export const MAX_LAYOUT_DEPTH = 10;
-export const MAX_LAYOUT_NODES = 64;
-export const MAX_CHILDREN = 16;
+export const MAX_LAYOUT_DEPTH = Number(process.env.AI_MAX_LAYOUT_DEPTH || 10);
+export const MAX_LAYOUT_NODES = Number(process.env.AI_MAX_LAYOUT_NODES || 64);
+export const MAX_CHILDREN = Number(process.env.AI_MAX_CHILDREN || 16);
+export const MAX_SETTINGS = Number(process.env.AI_MAX_SETTINGS || 80);
+export const MAX_SETTING_STRING = Number(process.env.AI_MAX_SETTING_STRING || 2000);
+export const MAX_BLUEPRINT_CHARS = Number(process.env.AI_BLUEPRINT_MAX_CHARS || 120000);
 
 export function normalizeComponentType(raw: unknown): AiComponentType | null {
   if (typeof raw !== 'string') return null;
@@ -237,6 +414,38 @@ CONTENT
 - product: product card. props: title, price, image, link, button_label, showAddToCart.
   Shows image, title, price, and Add to Cart when requested. Do not add reviews, badges, or countdown.
 - collection: collection card. props: title, image, link.
+- accordion: FAQ list. children must be accordion_item. props: title.
+- accordion_item: one Q&A. props: question, answer. Bind {{settings.faq_1_q}} / {{settings.faq_1_a}}.
+- newsletter: email signup form. props: heading, placeholder, button_text.
+- countdown: live sale timer. props: title, end_date (ISO datetime).
+- stories: Instagram-style story rings. props: heading. Do not invent story media.
+- model3d: 3D model viewer. props: src or model (bind {{settings.model}}).
+- contact_form: name/email/message form. props: heading, button_text.
+- icon: allowlisted icon only. props: name (truck|shield|refresh-cw|credit-card|headphones|star|heart|leaf|zap|award|clock|package|lock|globe|sparkles), heading, description.
+- page_content: store CMS page body. Bind {{settings.pageSlug}} via page resourcePicker. Never invent HTML.
+- reviews: live product reviews + rating summary. Bind product via resourcePicker ({{settings.product_id}}).
+- collection_grid: live products from one collection. Bind collection_id resourcePicker. Use this for Featured Collection and Collection Products. Do not emit product nodes.
+- slider: multi-slide hero. children must be slide. props: autoplay, interval.
+- slide: one slider slide. props: heading, description, image, video, button_text, button_link.
+- frame_scroll: scroll-driven frame sequence. Overlay heading/description via settings. Do not invent frame URLs.
+- product_detail: full product template (gallery, variants, quantity, add to cart). Bind product_id. Do not use product card.
+- tabs / tab: tabbed content. tab props: label. Children of tab are the panel.
+- filters: collection-bound product grid with sort/tag filters. Bind collection_id.
+- comparison_table / table_row: feature comparison. table_row props: label, c1, c2, c3, c4.
+- sticky_split: first child sticky, remaining children scroll.
+- timeline / timeline_item: date, heading, description, image. props orientation vertical|horizontal.
+- bento / bento_cell: uneven grid. bento_cell props: colSpan, rowSpan.
+- masonry: variable-height image gallery. props: columns.
+- before_after: interactive compare. props: before, after, position, orientation.
+- hotspot / hotspot_pin: image pins. pin props: x, y (0-100), heading, description, product_id.
+- marquee: scrolling text. props: text, direction, speed. Pause on hover is built-in.
+- parallax: scroll background. props: src/image, speed. Overlay children.
+- recommend: related products from the same category as product_id. Never invent IDs.
+- specs: live product specifications from product_id.
+- nav: store collections + pages menu. Never invent links.
+- size_guide: editable size rows only (no invented measurements).
+- whatsapp: WhatsApp chat button. props: phone, greeting, position.
+- shipping: pincode / COD checker. Do not invent availability.
 
 SETTINGS TYPES (schema only): text, richtext, image, video, color, font, select, toggle, number, link, resourcePicker.
 

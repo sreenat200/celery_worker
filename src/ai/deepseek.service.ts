@@ -122,6 +122,11 @@ export class DeepSeekService {
       const reasoning = String(choice?.message?.reasoning_content || '').trim();
       const finishReason = String(choice?.finish_reason || '');
 
+      const usage = data?.usage || {};
+      this.logger.log(
+        `DeepSeek ok model=${model} prompt_tokens=${usage.prompt_tokens || 0} completion_tokens=${usage.completion_tokens || 0} total_tokens=${usage.total_tokens || 0}`,
+      );
+
       if (content) {
         return content;
       }
@@ -153,7 +158,7 @@ export class DeepSeekService {
           : JSON.stringify(err.response?.data || {});
 
         this.logger.error(
-          `DeepSeek API request failed: HTTP ${status || 'ERR'} - ${err.message}. Response: ${responseBody.slice(0, 400)}`,
+          `DeepSeek API request failed: HTTP ${status || 'ERR'} code=${(err.response?.data as any)?.error?.code || 'n/a'}`,
         );
 
         if (status === 401) {

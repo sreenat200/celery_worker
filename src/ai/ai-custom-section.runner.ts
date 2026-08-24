@@ -5,8 +5,10 @@ import { DeepSeekInferenceError, DeepSeekService } from './deepseek.service';
 import { heapMb } from '../lib/sharp-limits';
 import { PrismaService } from '../prisma/prisma.service';
 import { planSectionLayout } from './ai-section-layout-planner';
+import { applyExtractedStyle, planSectionStyle } from './ai-section-style-planner';
 import { buildCustomSectionSystemPrompt, buildCustomSectionUserPrompt } from './ai-section-prompt';
 import { AiSectionValidationError, validateAiSectionBlueprint } from './ai-section-validator';
+import { validateStoreResources } from './ai-section-resources';
 
 function out(msg: string) {
   process.stdout.write(`${new Date().toISOString()} [custom-section-worker] ${msg}\n`);
@@ -87,9 +89,11 @@ export class AiCustomSectionRunner implements OnModuleInit, OnModuleDestroy {
       throw new UnrecoverableError('Store mismatch for custom section job');
     }
 
+    out(`job=${job.id} section=${sectionId} store=${storeId} attempt=${job.attemptsMade + 1}`);
     const plan = planSectionLayout(String(userPrompt || ''));
+    const style = planSectionStyle(String(userPrompt || ''));
     const systemPrompt = buildCustomSectionSystemPrompt();
-    const userPromptContent = buildCustomSectionUserPrompt(String(userPrompt || ''), plan);
+    const userPromptContent = buildCustomSectionUserPrompt(String(userPrompt || ''), plan, style);
     const modelName = this.deepSeek.getModel();
 
     let rawResponse: string;
@@ -117,8 +121,13 @@ export class AiCustomSectionRunner implements OnModuleInit, OnModuleDestroy {
 
     let validated;
     try {
+      if (rawResponse.length > Number(process.env.AI_BLUEPRINT_MAX_CHARS || 120000)) {
+        throw new AiSectionValidationError('AI response exceeds size limit', 'BLUEPRINT_TOO_LARGE');
+      }
       validated = validateAiSectionBlueprint(rawResponse);
+      validated.defaultSettings = applyExtractedStyle(validated.defaultSettings || {}, style.settings);
       validated = await this.bindStoreProducts(validated, Number(storeId), String(userPrompt || ''));
+      await validateStoreResources(this.prisma, Number(storeId), validated.defaultSettings || {});
     } catch (err: any) {
       const details =
         err instanceof AiSectionValidationError && err.details.length
@@ -225,26 +234,26 @@ export class AiCustomSectionRunner implements OnModuleInit, OnModuleDestroy {
     return next;
   }
 
-  private async bindStoreProducts(blueprint: any, storeId: number, userPrompt: string) {
-    const wantsProduct = /\bproducts?\b|\badd to cart\b|\brating\b/i.test(`${userPrompt} ${blueprint.name || ''}`);
-    if (!wantsProduct) {
-      return { ...blueprint, layout: this.stripProductNodes(blueprint.layout) };
+  private layoutNeedsProducts(node: any): boolean {
+    if (!node || typeof node !== 'object') return false;
+    if (
+      node.type === 'product' ||
+      node.type === 'product_detail' ||
+      node.type === 'recommend' ||
+      node.type === 'specs' ||
+      node.type === 'reviews' ||
+      node.type === 'hotspot_pin'
+    ) {
+      return true;
     }
-    let layout = this.coerceProductCards(blueprint.layout);
-    if (this.countProducts(layout) === 0 && /\bproducts?\b/i.test(`${blueprint.name || ''}`)) {
-      layout = {
-        ...layout,
-        children: [
-          ...(layout.children || []),
-          {
-            type: 'grid',
-            style: { desktop: { display: 'grid', gap: '24px', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' } },
-            children: [{ type: 'product' }, { type: 'product' }, { type: 'product' }],
-          },
-        ],
-      };
+    return Array.isArray(node.children) && node.children.some((child: any) => this.layoutNeedsProducts(child));
+  }
+
+  private async bindStoreProducts(blueprint: any, storeId: number, _userPrompt: string) {
+    if (!this.layoutNeedsProducts(blueprint.layout) && !this.countProducts(blueprint.layout)) {
+      return blueprint;
     }
-    layout = this.stampSlots(layout);
+    const layout = this.stampSlots(this.coerceProductCards(blueprint.layout));
     const count = this.countProducts(layout);
     if (count === 0) {
       return { ...blueprint, layout };

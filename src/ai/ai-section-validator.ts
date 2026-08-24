@@ -6,9 +6,12 @@ import {
   AI_SETTING_TYPES,
   BINDING_PATTERN,
   LEAF_COMPONENT_TYPES,
+  MAX_BLUEPRINT_CHARS,
   MAX_CHILDREN,
   MAX_LAYOUT_DEPTH,
   MAX_LAYOUT_NODES,
+  MAX_SETTINGS,
+  MAX_SETTING_STRING,
   UNSAFE_CONTENT_PATTERN,
   normalizeComponentType,
   type AiComponentType,
@@ -107,6 +110,7 @@ function inferSettingType(key: string): AiSettingType {
   if (k.includes('font')) return 'font';
   if (k.includes('link') || k.includes('url') || k.includes('href')) return 'link';
   if (k.includes('show_') || k.startsWith('is_') || k.startsWith('enable_')) return 'toggle';
+  if (k.includes('end_date') || k.includes('model')) return 'text';
   if (k.includes('count') || k.includes('column') || k.includes('gap')) return 'number';
   if (k.includes('product') || k.includes('collection')) return 'resourcePicker';
   if (k.includes('description') || k.includes('rich')) return 'richtext';
@@ -258,13 +262,22 @@ function ensureSettings(blueprint: {
   for (const key of Object.keys(defaults)) {
     if (!schema[key]) {
       delete defaults[key];
+    } else if (typeof defaults[key] === 'string' && defaults[key].length > MAX_SETTING_STRING) {
+      defaults[key] = defaults[key].slice(0, MAX_SETTING_STRING);
     }
+  }
+
+  if (Object.keys(schema).length > MAX_SETTINGS) {
+    throw new AiSectionValidationError('Too many settings on this section', 'TOO_MANY_SETTINGS');
   }
 
   return { schema, defaultSettings: defaults };
 }
 
 export function validateAiSectionBlueprint(rawText: string): ValidatedBlueprint {
+  if (rawText && rawText.length > MAX_BLUEPRINT_CHARS) {
+    throw new AiSectionValidationError('AI response exceeds size limit', 'BLUEPRINT_TOO_LARGE');
+  }
   const parsed = extractJsonObject(rawText);
   assertNoUnsafeContent(parsed);
 
