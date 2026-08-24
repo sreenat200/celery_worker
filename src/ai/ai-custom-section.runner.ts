@@ -9,10 +9,12 @@ import { applyExtractedStyle, planSectionStyle } from './ai-section-style-planne
 import {
   isFaqPrompt,
   isLuxuryComboPrompt,
+  isVideoShowcasePrompt,
   synthesizeCollectionBlocksBlueprint,
   synthesizeFaqBlueprint,
   synthesizeLuxuryComboBlueprint,
   synthesizeTestimonialBlueprint,
+  synthesizeVideoShowcaseBlueprint,
 } from './ai-section-synthesize';
 import { buildCustomSectionSystemPrompt, buildCustomSectionUserPrompt } from './ai-section-prompt';
 import { AiSectionValidationError, validateAiSectionBlueprint } from './ai-section-validator';
@@ -103,6 +105,7 @@ export class AiCustomSectionRunner implements OnModuleInit, OnModuleDestroy {
     const promptText = String(userPrompt || '');
     const useTestimonials = /\btestimonials?\b/i.test(promptText);
     const useFaq = isFaqPrompt(promptText);
+    const useVideoShowcase = isVideoShowcasePrompt(promptText);
     const useLuxuryCombo = isLuxuryComboPrompt(promptText);
     const useDeterministic =
       !useTestimonials &&
@@ -121,6 +124,16 @@ export class AiCustomSectionRunner implements OnModuleInit, OnModuleDestroy {
       await validateStoreResources(this.prisma, Number(storeId), bound.defaultSettings || {});
       await this.saveBlueprint(sectionId, bound, 'planner');
       return { success: true, model: 'planner', name: bound.name, plan: 'luxury-combo' };
+    }
+    if (useVideoShowcase) {
+      const synthesized = synthesizeVideoShowcaseBlueprint(promptText, style);
+      const validated = validateAiSectionBlueprint(JSON.stringify(synthesized));
+      validated.defaultSettings = applyExtractedStyle(
+        { ...synthesized.defaultSettings, ...(validated.defaultSettings || {}) },
+        style.settings,
+      );
+      await this.saveBlueprint(sectionId, validated, 'planner');
+      return { success: true, model: 'planner', name: validated.name, plan: 'video-showcase' };
     }
     if (useFaq) {
       const synthesized = synthesizeFaqBlueprint(promptText, style);

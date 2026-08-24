@@ -1,5 +1,10 @@
 export const AI_FONT_OPTIONS = [
+  { label: 'System Sans', value: 'system-ui' },
   { label: 'Inter', value: 'Inter' },
+  { label: 'Arial', value: 'Arial' },
+  { label: 'Helvetica', value: 'Helvetica' },
+  { label: 'Georgia', value: 'Georgia' },
+  { label: 'Times New Roman', value: 'Times New Roman' },
   { label: 'Playfair Display', value: 'Playfair Display' },
   { label: 'Cormorant Garamond', value: 'Cormorant Garamond' },
   { label: 'Cinzel', value: 'Cinzel' },
@@ -80,6 +85,10 @@ function detectFont(text: string): string | undefined {
   if (/\bmontserrat\b/.test(text)) return 'Montserrat';
   if (/\bpoppins\b/.test(text)) return 'Poppins';
   if (/\binter\b/.test(text)) return 'Inter';
+  if (/\barial\b/.test(text)) return 'Arial';
+  if (/\bhelvetica\b/.test(text)) return 'Helvetica';
+  if (/\bgeorgia\b/.test(text)) return 'Georgia';
+  if (/\btimes\b/.test(text)) return 'Times New Roman';
   if (/\bserif\b|\belegan(t)?\b|\bluxury\b/.test(text)) return 'Playfair Display';
   if (/\bsans\b|\bmodern\b/.test(text)) return 'Inter';
   return undefined;
@@ -160,11 +169,20 @@ export function planSectionStyle(userPrompt: string): SectionStylePlan {
     notes.push('text_color=#ffffff');
   }
 
+  const headingFontChunk = text.match(/(?:heading|title|headline)(?:\s+\w+){0,6}/);
+  const bodyFontChunk = text.match(/(?:body|description|copy)(?:\s+\w+){0,6}/);
+  const headingFont = headingFontChunk ? detectFont(headingFontChunk[0]) : undefined;
+  const bodyFont = bodyFontChunk ? detectFont(bodyFontChunk[0]) : undefined;
   const font = detectFont(text);
-  if (font) {
-    settings.heading_font_family = font;
-    if (/\bserif\b|\bluxury\b|\belegan/.test(text)) settings.body_font_family = font === 'Playfair Display' ? 'Lora' : font;
-    notes.push(`heading_font_family=${font}`);
+  if (headingFont || font) {
+    settings.heading_font_family = headingFont || font || 'Inter';
+    notes.push(`heading_font_family=${settings.heading_font_family}`);
+  }
+  if (bodyFont) {
+    settings.body_font_family = bodyFont;
+    notes.push(`body_font_family=${bodyFont}`);
+  } else if (font && /\bserif\b|\bluxury\b|\belegan/.test(text)) {
+    settings.body_font_family = font === 'Playfair Display' ? 'Inter' : font;
   }
 
   if (/\blarge heading\b|\bxl heading\b|\bhero heading\b/.test(text)) {

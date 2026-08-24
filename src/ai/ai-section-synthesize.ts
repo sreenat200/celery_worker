@@ -155,6 +155,53 @@ export function synthesizeFaqBlueprint(_prompt: string, style: SectionStylePlan)
   };
 }
 
+export function isVideoShowcasePrompt(prompt: string): boolean {
+  const t = (prompt || '').toLowerCase();
+  return /\bvideo\b/.test(t) && (/\bshowcase\b|\bheading\b|\bwatch now\b/.test(t)) && !/\bstories?\b|\bslider\b/.test(t);
+}
+
+export function synthesizeVideoShowcaseBlueprint(_prompt: string, style: SectionStylePlan) {
+  return {
+    name: 'Video Showcase',
+    schema: {
+      heading: { type: 'text', label: 'Heading', default: 'Watch the film' },
+      subheading: { type: 'richtext', label: 'Description', default: '' },
+      video: { type: 'video', label: 'Video', default: '' },
+      button_1_text: { type: 'text', label: 'Button label', default: 'Watch Now' },
+      button_1_link: { type: 'link', label: 'Button link', default: '#' },
+    },
+    defaultSettings: {
+      heading: 'Watch the film',
+      subheading: 'A closer look at the collection.',
+      button_1_text: 'Watch Now',
+      button_1_link: '#',
+      button_1_bg: '#d4af37',
+      button_1_color: '#111827',
+      bg_color: '#0a1628',
+      heading_color: '#f5f0e8',
+      text_color: '#f5f0e8',
+      overlay_opacity: '30',
+      border_radius: '16',
+      heading_font_family: 'Playfair Display',
+      body_font_family: 'Inter',
+      text_align: 'center',
+      video_autoplay: true,
+      video_muted: true,
+      video_controls: true,
+      ...style.settings,
+    },
+    layout: {
+      type: 'container',
+      children: [
+        { type: 'video', props: { src: '{{settings.video}}' } },
+        { type: 'heading', props: { content: '{{settings.heading}}' } },
+        { type: 'text', props: { content: '{{settings.subheading}}' } },
+        { type: 'button', props: { slot: 1, label: '{{settings.button_1_text}}', link: '{{settings.button_1_link}}' } },
+      ],
+    },
+  };
+}
+
 export function isLuxuryComboPrompt(prompt: string): boolean {
   const t = (prompt || '').toLowerCase();
   const luxury = /\bluxury\b|\bjewel/.test(t);
