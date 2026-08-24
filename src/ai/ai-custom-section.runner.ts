@@ -118,7 +118,7 @@ export class AiCustomSectionRunner implements OnModuleInit, OnModuleDestroy {
     let validated;
     try {
       validated = validateAiSectionBlueprint(rawResponse);
-      validated = await this.bindStoreProducts(validated, Number(storeId));
+      validated = await this.bindStoreProducts(validated, Number(storeId), String(userPrompt || ''));
     } catch (err: any) {
       const details =
         err instanceof AiSectionValidationError && err.details.length
@@ -184,17 +184,30 @@ export class AiCustomSectionRunner implements OnModuleInit, OnModuleDestroy {
     return self + kids;
   }
 
+  private stripProductNodes(node: any): any {
+    if (!node || typeof node !== 'object') return node;
+    if (node.type === 'product') return null;
+    if (!Array.isArray(node.children)) return node;
+    const children = node.children.map((child: any) => this.stripProductNodes(child)).filter(Boolean);
+    return { ...node, children };
+  }
+
   private coerceProductCards(node: any): any {
     if (!node || typeof node !== 'object') return node;
     const children = Array.isArray(node.children) ? node.children.map((child: any) => this.coerceProductCards(child)) : undefined;
     const next = children ? { ...node, children } : { ...node };
-    if ((next.type === 'grid' || next.type === 'row' || next.type === 'carousel') && Array.isArray(next.children)) {
-      next.children = next.children.map((child: any) => {
-        if (!child || child.type === 'product') return child;
-        const types = (child.children || []).map((c: any) => c?.type);
-        const card = types.includes('button') && (types.includes('heading') || types.includes('text') || types.includes('image'));
-        return card ? { type: 'product', style: child.style, props: {} } : child;
-      });
+    if ((next.type === 'grid' || next.type === 'carousel') && Array.isArray(next.children) && next.children.length >= 2) {
+      const hasVideo = next.children.some((child: any) => child?.type === 'video');
+      if (!hasVideo) {
+        next.children = next.children.map((child: any) => {
+          if (!child || child.type === 'product') return child;
+          const copy = JSON.stringify(child.props || child.children || []).toLowerCase();
+          if (/featured product|add to cart|₹\d+|\$\d+/.test(copy)) {
+            return { type: 'product', style: child.style, props: {} };
+          }
+          return child;
+        });
+      }
     }
     return next;
   }
@@ -212,9 +225,13 @@ export class AiCustomSectionRunner implements OnModuleInit, OnModuleDestroy {
     return next;
   }
 
-  private async bindStoreProducts(blueprint: any, storeId: number) {
+  private async bindStoreProducts(blueprint: any, storeId: number, userPrompt: string) {
+    const wantsProduct = /\bproducts?\b|\badd to cart\b|\brating\b/i.test(`${userPrompt} ${blueprint.name || ''}`);
+    if (!wantsProduct) {
+      return { ...blueprint, layout: this.stripProductNodes(blueprint.layout) };
+    }
     let layout = this.coerceProductCards(blueprint.layout);
-    if (this.countProducts(layout) === 0 && /product/i.test(`${blueprint.name || ''}`)) {
+    if (this.countProducts(layout) === 0 && /\bproducts?\b/i.test(`${blueprint.name || ''}`)) {
       layout = {
         ...layout,
         children: [

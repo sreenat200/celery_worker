@@ -16,6 +16,7 @@ LAYOUT RULES
 - Use the minimum number of nodes. Do not add unrelated features (reviews, badges, countdowns, extra CTAs, decorative cards) unless asked.
 - Do not copy a generic heading/text/button template when the request is a video, product grid, collection scroller, or split media layout.
 - Never invent product names, prices, ratings, or images. For product nodes, leave title/price/image empty and expose a product resourcePicker. Real catalog data is bound server-side.
+- Do not add a product component unless the merchant explicitly asked for products, prices, or Add to Cart. A video + heading + description + button section must stay video, heading, text, and button.
 
 RESPONSIVE
 - Desktop must match the requested layout and column proportions.
