@@ -6,6 +6,14 @@ import { heapMb } from '../lib/sharp-limits';
 import { PrismaService } from '../prisma/prisma.service';
 import { planSectionLayout } from './ai-section-layout-planner';
 import { applyExtractedStyle, planSectionStyle } from './ai-section-style-planner';
+import {
+  isFaqPrompt,
+  isLuxuryComboPrompt,
+  synthesizeCollectionBlocksBlueprint,
+  synthesizeFaqBlueprint,
+  synthesizeLuxuryComboBlueprint,
+  synthesizeTestimonialBlueprint,
+} from './ai-section-synthesize';
 import { buildCustomSectionSystemPrompt, buildCustomSectionUserPrompt } from './ai-section-prompt';
 import { AiSectionValidationError, validateAiSectionBlueprint } from './ai-section-validator';
 import { validateStoreResources } from './ai-section-resources';
@@ -92,16 +100,63 @@ export class AiCustomSectionRunner implements OnModuleInit, OnModuleDestroy {
     out(`job=${job.id} section=${sectionId} store=${storeId} attempt=${job.attemptsMade + 1}`);
     const plan = planSectionLayout(String(userPrompt || ''));
     const style = planSectionStyle(String(userPrompt || ''));
+    const promptText = String(userPrompt || '');
+    const useTestimonials = /\btestimonials?\b/i.test(promptText);
+    const useFaq = isFaqPrompt(promptText);
+    const useLuxuryCombo = isLuxuryComboPrompt(promptText);
+    const useDeterministic =
+      !useTestimonials &&
+      !useLuxuryCombo &&
+      (plan.suggestedTree.includes('row x4') ||
+        /\b\d+\s+(?:separate\s+)?collection sections\b/i.test(promptText) ||
+        (/\bnecklaces?\b/i.test(promptText) && /\bearrings?\b/i.test(promptText)));
+    if (useLuxuryCombo) {
+      const synthesized = synthesizeLuxuryComboBlueprint(promptText, style);
+      const validated = validateAiSectionBlueprint(JSON.stringify(synthesized));
+      validated.defaultSettings = applyExtractedStyle(
+        { ...synthesized.defaultSettings, ...(validated.defaultSettings || {}) },
+        style.settings,
+      );
+      const bound = await this.bindStoreProducts(validated, Number(storeId), promptText);
+      await validateStoreResources(this.prisma, Number(storeId), bound.defaultSettings || {});
+      await this.saveBlueprint(sectionId, bound, 'planner');
+      return { success: true, model: 'planner', name: bound.name, plan: 'luxury-combo' };
+    }
+    if (useFaq) {
+      const synthesized = synthesizeFaqBlueprint(promptText, style);
+      const validated = validateAiSectionBlueprint(JSON.stringify(synthesized));
+      validated.defaultSettings = applyExtractedStyle(
+        { ...synthesized.defaultSettings, ...(validated.defaultSettings || {}) },
+        style.settings,
+      );
+      await this.saveBlueprint(sectionId, validated, 'planner');
+      return { success: true, model: 'planner', name: validated.name, plan: 'faq' };
+    }
+    if (useTestimonials) {
+      const synthesized = synthesizeTestimonialBlueprint(promptText, style);
+      const validated = validateAiSectionBlueprint(JSON.stringify(synthesized));
+      validated.defaultSettings = applyExtractedStyle(validated.defaultSettings || {}, style.settings);
+      await this.saveBlueprint(sectionId, validated, 'planner');
+      return { success: true, model: 'planner', name: validated.name, plan: 'testimonials' };
+    }
+    if (useDeterministic) {
+      const synthesized = synthesizeCollectionBlocksBlueprint(promptText, style);
+      const validated = validateAiSectionBlueprint(JSON.stringify(synthesized));
+      validated.defaultSettings = applyExtractedStyle(validated.defaultSettings || {}, style.settings);
+      await validateStoreResources(this.prisma, Number(storeId), validated.defaultSettings || {});
+      await this.saveBlueprint(sectionId, validated, 'planner');
+      return { success: true, model: 'planner', name: validated.name, plan: plan.purpose };
+    }
     const systemPrompt = buildCustomSectionSystemPrompt();
     const userPromptContent = buildCustomSectionUserPrompt(String(userPrompt || ''), plan, style);
     const modelName = this.deepSeek.getModel();
 
     let rawResponse: string;
     try {
-      const maxTokens = Math.min(
-        4096,
-        Math.max(1024, parseInt(process.env.CUSTOM_SECTION_MAX_TOKENS || '2800', 10) || 2800),
-      );
+      const promptChars = Math.min(700, String(userPrompt || '').trim().length);
+      const scaled = 4096 + Math.round(promptChars * 6);
+      const cap = Math.min(8192, Math.max(4096, parseInt(process.env.CUSTOM_SECTION_MAX_TOKENS || '8192', 10) || 8192));
+      const maxTokens = Math.min(cap, Math.max(4096, scaled));
       rawResponse = await this.deepSeek.generateChat(
         [
           { role: 'system', content: systemPrompt },
@@ -144,26 +199,7 @@ export class AiCustomSectionRunner implements OnModuleInit, OnModuleDestroy {
     }
 
     try {
-      await this.prisma.$transaction(async (tx) => {
-        await tx.ai_custom_section.update({
-          where: { id: sectionId },
-          data: {
-            status: 'completed',
-            name: validated.name.slice(0, 255),
-            model_name: modelName,
-            blueprint: validated as any,
-            error_code: null,
-            error_message: null,
-          },
-        });
-
-        await tx.ai_custom_section_version.create({
-          data: {
-            section_id: sectionId,
-            blueprint: validated as any,
-          },
-        });
-      });
+      await this.saveBlueprint(sectionId, validated, modelName);
 
       return {
         success: true,
@@ -254,7 +290,9 @@ export class AiCustomSectionRunner implements OnModuleInit, OnModuleDestroy {
       return blueprint;
     }
     const layout = this.stampSlots(this.coerceProductCards(blueprint.layout));
-    const count = this.countProducts(layout);
+    const productNodes = this.countProducts(layout);
+    const recommendSlots = this.layoutHasType(layout, 'recommend') ? 6 : 0;
+    const count = Math.max(productNodes, recommendSlots);
     if (count === 0) {
       return { ...blueprint, layout };
     }
@@ -289,6 +327,25 @@ export class AiCustomSectionRunner implements OnModuleInit, OnModuleDestroy {
     }
     if (products[0]) next.defaultSettings.product_id = String(products[0].id);
     return next;
+  }
+
+  private async saveBlueprint(sectionId: number, validated: any, modelName: string) {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.ai_custom_section.update({
+        where: { id: sectionId },
+        data: {
+          status: 'completed',
+          name: String(validated.name || 'Custom Section').slice(0, 255),
+          model_name: modelName,
+          blueprint: validated as any,
+          error_code: null,
+          error_message: null,
+        },
+      });
+      await tx.ai_custom_section_version.create({
+        data: { section_id: sectionId, blueprint: validated as any },
+      });
+    });
   }
 
   private async markSectionFailed(sectionId: number, code: string, message: string) {

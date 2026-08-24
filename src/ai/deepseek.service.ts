@@ -12,6 +12,29 @@ export class DeepSeekInferenceError extends Error {
   }
 }
 
+function normalizeMessageContent(raw: unknown): string {
+  if (raw == null) return '';
+  if (typeof raw === 'string') return raw.trim();
+  if (Array.isArray(raw)) {
+    return raw
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        if (part && typeof part === 'object') {
+          const rec = part as Record<string, unknown>;
+          if (typeof rec.text === 'string') return rec.text;
+          if (typeof rec.content === 'string') return rec.content;
+        }
+        return '';
+      })
+      .join('')
+      .trim();
+  }
+  if (typeof raw === 'object' && raw && typeof (raw as any).text === 'string') {
+    return String((raw as any).text).trim();
+  }
+  return '';
+}
+
 @Injectable()
 export class DeepSeekService {
   private readonly logger = new Logger(DeepSeekService.name);
@@ -118,8 +141,8 @@ export class DeepSeekService {
       }
 
       const choice = data?.choices?.[0];
-      const content = String(choice?.message?.content || choice?.text || '').trim();
-      const reasoning = String(choice?.message?.reasoning_content || '').trim();
+      const content = normalizeMessageContent(choice?.message?.content ?? choice?.text);
+      const reasoning = normalizeMessageContent(choice?.message?.reasoning_content);
       const finishReason = String(choice?.finish_reason || '');
 
       const usage = data?.usage || {};

@@ -1,10 +1,9 @@
-import { getRegistryPromptContext } from './ai-section-component-registry';
 import type { SectionLayoutPlan } from './ai-section-layout-planner';
 import type { SectionStylePlan } from './ai-section-style-planner';
 
 export function buildCustomSectionSystemPrompt(): string {
   return `You are an expert ecommerce storefront section designer.
-Convert the merchant's natural-language request into a valid AiSectionBlueprint using ONLY the provided Component Registry.
+Convert the merchant's request into ONE compact AiSectionBlueprint JSON object.
 
 PROCESS (follow in order)
 1. Understand the requested purpose, layout direction, components, content hierarchy, alignment, desktop/mobile behavior, visual style, and explicit constraints.
@@ -32,12 +31,12 @@ VISUAL QUALITY
 - Media and columns: minWidth 0, maxWidth 100%.
 
 SETTINGS
-- schema + defaultSettings must stay in sync.
-- Bind content/media with {{settings.heading}}, {{settings.subheading}}, {{settings.image}}, {{settings.video}}, {{settings.button_text}}, {{settings.button_link}}.
-- Put extracted style tokens into defaultSettings using ONLY these keys: bg_color, text_color, heading_color, button_bg, button_text_color, button_border_color, button_border_width, button_radius, button_width, button_height, heading_font_family, body_font_family, heading_size, body_size, font_weight, text_align, line_height, letter_spacing, gap, padding_x, padding_y, margin, alignment, border_radius, border_width, border_color, border_style, shadow (none|soft|medium), overlay_opacity, gradient (none|dark|gold|fade), mobile_padding_y, mobile_heading_size, mobile_text_align, mobile_button_width.
-- Never invent CSS files, gradients, or box-shadow strings. Use the allowlisted tokens above.
-- Useful settings only, with clear labels, categories, and correct types.
-- Defaults must look good immediately.
+- Emit a SMALL schema: only content fields (heading, text, image, button_text, button_link, faq_1_q, faq_1_a). Do NOT emit select options, chrome, array, list, or style field definitions.
+- Never use setting type "array". FAQ must be accordion + accordion_item with faq_N_q / faq_N_a text fields.
+- Bind with {{settings.heading}}, {{settings.subheading}}, {{settings.image}}, {{settings.button_text}}, {{settings.button_link}}.
+- Leave product/collection IDs empty. Never invent IDs.
+- Do not emit multiple JSON objects. One object only.
+- Keep JSON compact. Omit empty style objects. Max 24 layout nodes. Do not repeat the same setting in schema and defaultSettings.
 
 OUTPUT
 - Return ONLY valid JSON. No markdown. No commentary.
@@ -59,70 +58,9 @@ JSON SHAPE
   }
 }
 
-${getRegistryPromptContext()}
+Allowed types only: container,row,column,grid,stack,carousel,heading,text,image,video,button,product,collection,accordion,accordion_item,newsletter,countdown,stories,model3d,contact_form,icon,page_content,reviews,collection_grid,slider,slide,frame_scroll,product_detail,tabs,tab,filters,comparison_table,table_row,sticky_split,timeline,timeline_item,bento,bento_cell,masonry,before_after,hotspot,hotspot_pin,marquee,parallax,recommend,specs,nav,size_guide,whatsapp,shipping,testimonial,testimonial_item.
 
-WORKED STRUCTURES (adapt to the request; do not ignore the request in favor of these)
-1) "horizontal video with text on the right"
-   container > row > [video | column > heading, text, button]
-   desktop row; mobile column with video first.
-2) "3-column product section with images, prices and Add to Cart"
-   container > grid(3) > product x3 (image, title, price, Add to Cart). No reviews/badges.
-3) "horizontally scrolling collection section"
-   container > heading? > carousel > collection cards. overflow-x auto inside section only.
-4) "image and text with the image on the right"
-   container > row > [column(heading,text,button) | image]
-5) "promotional banner with heading, description and CTA"
-   container > stack (centered) > heading, text, button
- 6) "mobile-first stacked content"
-    container > stack > requested content only
- 7) "FAQ accordion"
-    container > heading > accordion > accordion_item x4
- 8) "newsletter signup"
-    container > heading, text, newsletter
- 9) "countdown sale"
-    container > heading, countdown
-10) "instagram stories"
-    container > stories
-11) "3D product"
-    container > heading?, model3d
-12) "contact form"
-    container > heading, contact_form
-13) "feature icons"
-    container > heading?, grid > icon x4
-14) "page content"
-    container > page_content
-15) "product reviews"
-    container > heading?, reviews
-16) "collection products" / "featured collection"
-    container > heading?, collection_grid
-17) "slider hero"
-    container > slider > slide x3
-18) "frame scroll hero"
-    container > frame_scroll
-19) "product template"
-    container > product_detail
-20) "tabs"
-    container > tabs > tab x3
-21) "product filters"
-    container > filters
-22) "comparison table"
-    container > comparison_table > table_row x4
-23) "sticky split"
-    container > sticky_split > [stack copy | stack images]
-24) "timeline"
-    container > timeline > timeline_item x4
-25) "bento"
-    container > bento > bento_cell x6
-26) "masonry"
-    container > masonry > image x6
-27) "before and after"
-    container > before_after
-28) "hotspot image"
-    container > hotspot > hotspot_pin x3
-29) "marquee"
-    container > marquee
-30) "parallax"
-    container > parallax > heading, text, button`;
+Keep the tree small. Omit empty style objects.`;
 }
 
 export function buildCustomSectionUserPrompt(

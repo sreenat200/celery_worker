@@ -77,7 +77,8 @@ export function planSectionLayout(userPrompt: string): SectionLayoutPlan {
   const wantsContact = has(lower, /\bcontact form\b|\bget in touch\b|\benquiry form\b/) || (has(lower, /\bcontact\b/) && has(lower, /\bform\b/));
   const wantsIcons = has(lower, /\bfeature icons?\b|\btrust badges?\b|\busp\b|\bicon row\b/) || (has(lower, /\bicons?\b/) && has(lower, /\bfeatures?\b/));
   const wantsPage = has(lower, /\bpage content\b|\bcms\b|\bpage body\b/);
-  const wantsReviews = has(lower, /\bproduct reviews?\b|\bcustomer reviews?\b|\brating summary\b/) || (has(lower, /\breviews?\b/) && !has(lower, /\btestimonial/));
+  const wantsTestimonials = has(lower, /\btestimonials?\b|\bcustomer quotes?\b/);
+  const wantsReviews = !wantsTestimonials && (has(lower, /\bproduct reviews?\b|\bcustomer reviews?\b|\brating summary\b/) || (has(lower, /\breviews?\b/) && !has(lower, /\btestimonial/)));
   const wantsCollectionGrid = has(lower, /\bcollection products\b|\bfeatured collection\b|\bcollection grid\b|\bproducts? (from|in) (a |the )?collection\b/);
   const wantsSlider = has(lower, /\bslider hero\b|\bhero slider\b|\bslideshow\b|\bslide show\b/) || (has(lower, /\bslider\b/) && has(lower, /\bhero\b|slides?\b/));
   const wantsFrames = has(lower, /\bframe scroll\b|\bscroll hero\b|\bimage frames\b|\bpremium frames\b|\bscroll.?to.?frame\b/);
@@ -102,8 +103,13 @@ export function planSectionLayout(userPrompt: string): SectionLayoutPlan {
   const wantsVideo = has(lower, /\bvideos?\b|\bvideo section\b|\breel\b/) && !wantsStories && !wantsSlider;
   const wantsImage = has(lower, /\bimages?\b|\bphotos?\b|\bpictures?\b/);
   const wantsProduct = has(lower, /\bproducts?\b|\badd to cart\b|\bprices?\b/) && !wantsCollectionGrid && !wantsPdp && !wantsReviews;
+  const wantsCollectionBlocks =
+    has(lower, /\b\d+\s+(?:separate\s+)?collection sections\b/) ||
+    (has(lower, /\beach section\b/) && has(lower, /\bcollection\b/)) ||
+    (has(lower, /\bnecklaces?\b/) && has(lower, /\bearrings?\b/));
   const wantsCollection = has(lower, /\bcollections?\b/) && !wantsCollectionGrid;
   const wantsCarousel = has(lower, /\bcarousel\b|\bhorizontally scrolling\b|\bhorizontal scroll\b|\bsliding\b/) && !wantsSlider;
+  const wantsMobileCarousel = has(lower, /\bcarousel on mobile\b|\bhorizontal scroll on mobile\b/);
   const wantsGrid = has(lower, /\bgrid\b|\bcolumns?\b|\b3-column\b|\bthree column\b/);
   const wantsOverlay = has(lower, /\boverlay\b|text over|over the image|on top of/);
   const wantsStack = has(lower, /\bstacked\b|\bmobile-first\b|\bvertical\b/);
@@ -175,6 +181,7 @@ export function planSectionLayout(userPrompt: string): SectionLayoutPlan {
   if (wantsIcons) components.push('icon');
   if (wantsPage) components.push('page_content');
   if (wantsReviews) components.push('reviews');
+  if (wantsTestimonials) components.push('testimonial', 'testimonial_item');
   if (wantsCollectionGrid) components.push('collection_grid');
   if (wantsSlider) components.push('slider', 'slide');
   if (wantsFrames) components.push('frame_scroll');
@@ -203,6 +210,15 @@ export function planSectionLayout(userPrompt: string): SectionLayoutPlan {
   const uniqueComponents = Array.from(new Set(components));
 
   const constraints: string[] = [];
+  if (wantsCollection && wantsButton) {
+    constraints.push('Each collection card has its own live collection_N picker, CTA, border (collection_N_border_color / collection_N_border_width), and button chrome (collection_N_cta_border / collection_N_cta_radius).');
+  }
+  if (wantsProduct && has(lower, /\bquantity\b|\bqty\b/)) {
+    constraints.push('Enable quantity selectors on product cards (enable_quantity / product_N_quantity). Bind Add to Cart to the selected quantity.');
+  }
+  if (includeButton && has(lower, /\b(width|border|hover)\b/)) {
+    constraints.push('Style each button independently with button_N_width (auto, full, or px number), button_N_radius, button_N_border_color, button_N_border_width, button_N_hover_bg, button_N_hover_color, button_N_hover_border.');
+  }
   if (wantsVideo) constraints.push('Use video, never substitute an image banner.');
   if (mediaSide === 'left') constraints.push('Media occupies the left side on desktop; text on the right.');
   if (mediaSide === 'right') constraints.push('Media occupies the right side on desktop; text on the left.');
@@ -215,35 +231,53 @@ export function planSectionLayout(userPrompt: string): SectionLayoutPlan {
   if (wantsStories) constraints.push('Use stories. Do not substitute a carousel of images.');
   if (wants3d) constraints.push('Use model3d. Do not substitute an image.');
   if (wantsContact) constraints.push('Use contact_form. Do not fake fields with text nodes.');
-  if (wantsIcons) constraints.push('Use icon nodes with allowlisted name values only.');
+  if (wantsIcons) constraints.push('Use icon nodes with allowlisted name values only. Per-icon backgrounds use icon_N_bg.');
   if (wantsPage) constraints.push('Use page_content. Bind a page resourcePicker. Do not invent page HTML.');
   if (wantsReviews) constraints.push('Use reviews with a product resourcePicker. Do not fake review cards with text.');
-  if (wantsCollectionGrid) constraints.push('Use collection_grid with a collection resourcePicker. Do not emit individual product nodes.');
+  if (wantsCollectionGrid) constraints.push('Use collection_grid with a collection resourcePicker. Enable grid_show_rating, grid_show_qty, and grid_show_atc when asked. Do not emit individual product nodes.');
   if (wantsSlider) constraints.push('Use slider + slide children. Do not use carousel.');
   if (wantsFrames) constraints.push('Use frame_scroll. Do not fake frames with a stack of images.');
   if (wantsPdp) constraints.push('Use product_detail. Do not use a product card.');
-  if (wantsTabs) constraints.push('Use tabs + tab children. Do not fake tabs with buttons.');
+  if (wantsTabs) {
+    constraints.push('Use tabs + tab children. Do not fake tabs with buttons.');
+    if (wantsCollectionGrid || wantsCollection || wantsProduct) {
+      constraints.push('Bind a separate tab_N_collection_id for each tab. Leave IDs empty. Each tab should contain collection_grid.');
+      if (has(lower, /\brating|quantity|add to cart\b/)) {
+        constraints.push('Set grid_show_rating, grid_show_qty, and grid_show_atc on the section.');
+      }
+    }
+  }
   if (wantsFilters) constraints.push('Use filters with a collection resourcePicker.');
   if (wantsTable) constraints.push('Use comparison_table + table_row.');
   if (wantsSticky) constraints.push('Use sticky_split. First child is sticky content; remaining children are scrolling media.');
   if (wantsTimeline) constraints.push('Use timeline + timeline_item.');
   if (wantsBento) constraints.push('Use bento + bento_cell with colSpan/rowSpan.');
   if (wantsMasonry) constraints.push('Use masonry. Do not use equal-height grid.');
-  if (wantsBeforeAfter) constraints.push('Use before_after. Do not use two images side by side.');
+  if (wantsBeforeAfter) constraints.push('Use before_after with optional before_label and after_label. Do not use two images side by side.');
   if (wantsHotspot) constraints.push('Use hotspot + hotspot_pin with x/y percents.');
   if (wantsMarquee) constraints.push('Use marquee. Do not fake scrolling with carousel.');
   if (wantsParallax) constraints.push('Use parallax.');
-  if (wantsRecommend) constraints.push('Use recommend with a source product resourcePicker. Do not invent product IDs.');
+  if (wantsRecommend) {
+    constraints.push('Use recommend with product_1–product_6 pickers. Show rating, quantity, and Add to Cart when asked. Do not invent product IDs.');
+    if (/\bgrid\b/.test(lower)) constraints.push('Set recommend_layout to grid.');
+    else if (/\bcarousel\b/.test(lower)) constraints.push('Set recommend_layout to carousel.');
+    constraints.push('Style recommend cards with recommend_card_bg, recommend_card_shadow, recommend_card_text, recommend_card_radius.');
+  }
   if (wantsSpecs) constraints.push('Use specs with a product resourcePicker.');
   if (wantsNav) constraints.push('Use nav. Do not invent menu items.');
   if (wantsSizeGuide) constraints.push('Use size_guide. Do not invent store measurements.');
   if (wantsWhatsapp) constraints.push('Use whatsapp.');
   if (wantsShipping) constraints.push('Use shipping.');
   if (wantsStack) constraints.push('Keep a stacked vertical layout on all breakpoints.');
+  if (wantsMobileCarousel) constraints.push('Use a product/collection grid on desktop and set mobile_layout to carousel.');
   constraints.push('On mobile, stack horizontal panes (media above text) unless carousel scrolling was requested.');
   constraints.push('Do not invent features the user did not request.');
+  if (wantsCollectionBlocks) {
+    constraints.push('Emit ONE blueprint with a single container. Do not emit multiple JSON objects.');
+    constraints.push('Build 4 stacked rows: image + heading + text + Shop Now button. Leave collection IDs empty.');
+  }
 
-  const suggestedTree = buildSuggestedTree({
+  let suggestedTree = buildSuggestedTree({
     layoutDirection,
     mediaType,
     mediaSide,
@@ -276,10 +310,24 @@ export function planSectionLayout(userPrompt: string): SectionLayoutPlan {
     wantsBeforeAfter,
     wantsHotspot,
     wantsMarquee,
-    wantsParallax,
-    showAddToCart,
-    overlay,
+      wantsParallax,
+      wantsRecommend,
+      showAddToCart,
+      overlay,
   });
+
+  if (wantsCollectionBlocks) {
+    suggestedTree = [
+      'container',
+      '  stack',
+      '    row x4 (desktop: image | copy, mobile: column)',
+      '      image',
+      '      column',
+      '        heading',
+      '        text',
+      '        button (Shop Now)',
+    ].join('\n');
+  }
 
   const purpose = derivePurpose({
     layoutDirection,
@@ -443,6 +491,7 @@ function buildSuggestedTree(input: {
   wantsHotspot: boolean;
   wantsMarquee: boolean;
   wantsParallax: boolean;
+  wantsRecommend: boolean;
   showAddToCart: boolean;
   overlay: boolean;
 }): string {
@@ -491,7 +540,7 @@ function buildSuggestedTree(input: {
     return ['container', '  product_detail'].join('\n');
   }
   if (input.wantsTabs) {
-    return ['container', '  tabs', '    tab x3 (label + content)'].join('\n');
+    return ['container', '  tabs', '    tab x4 (label + tab_N_collection_id + collection_grid)'].join('\n');
   }
   if (input.wantsFilters) {
     return ['container', '  heading?', '  filters'].join('\n');
@@ -512,7 +561,7 @@ function buildSuggestedTree(input: {
     return ['container', '  masonry', '    image x6'].join('\n');
   }
   if (input.wantsBeforeAfter) {
-    return ['container', '  heading?', '  before_after'].join('\n');
+    return ['container', '  heading?', '  before_after (before, after, before_label, after_label)'].join('\n');
   }
   if (input.wantsHotspot) {
     return ['container', '  hotspot', '    hotspot_pin x3 (x, y, heading)'].join('\n');
@@ -523,6 +572,9 @@ function buildSuggestedTree(input: {
   if (input.wantsParallax) {
     return ['container', '  parallax', '    heading, text, button'].join('\n');
   }
+  if (input.wantsRecommend) {
+    return ['container', '  heading?', '  recommend (product_1–6, rating, quantity, Add to Cart, grid or carousel)'].join('\n');
+  }
 
   if (input.wantsProduct) {
     const cols = input.columns || 3;
@@ -531,7 +583,7 @@ function buildSuggestedTree(input: {
       input.includeHeading ? '  heading' : null,
       input.includeText ? '  text' : null,
       `  grid (desktop: ${cols} columns, tablet: 2, mobile: 1)`,
-      `    product x${cols} (image, title, price${input.showAddToCart ? ', Add to Cart button' : ''})`,
+      `    product x${cols} (image, title, price, quantity selector${input.showAddToCart ? ', Add to Cart button' : ''})`,
     ]
       .filter(Boolean)
       .join('\n');
@@ -543,7 +595,7 @@ function buildSuggestedTree(input: {
       input.includeHeading ? '  heading' : null,
       input.includeText ? '  text' : null,
       '  carousel (overflow-x auto, no page overflow)',
-      '    collection x4 (image, title)',
+      '    collection x4 (image, title, description, Shop Now CTA)',
     ]
       .filter(Boolean)
       .join('\n');
@@ -555,7 +607,7 @@ function buildSuggestedTree(input: {
       'container',
       input.includeHeading ? '  heading' : null,
       `  grid (desktop: ${cols} columns)`,
-      `    collection x${cols}`,
+      `    collection x${cols} (image, title, Shop Now CTA)`,
     ]
       .filter(Boolean)
       .join('\n');

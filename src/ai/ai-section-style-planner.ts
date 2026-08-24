@@ -29,6 +29,20 @@ const COLOR_NAMES: Array<[RegExp, string]> = [
   [/\bnavy\b|\bdark navy\b/, '#0a1628'],
   [/\bgold\b|\bchampagne\b/, '#d4af37'],
   [/\bbeige\b|\bcream\b|\bivory\b/, '#f5f0e8'],
+  [/\bburgundy\b|\bmaroon\b|\bwine\b/, '#6b1d2a'],
+  [/\bbrown\b|\bchocolate\b|\bespresso\b/, '#4a2c1a'],
+  [/\bforest green\b|\bdark green\b/, '#14532d'],
+  [/\bsage\b|\bmint\b/, '#86efac'],
+  [/\bemerald\b/, '#059669'],
+  [/\bteal\b/, '#0d9488'],
+  [/\bolive\b/, '#4d7c0f'],
+  [/\bgreen\b/, '#16a34a'],
+  [/\bred\b|\bcrimson\b/, '#dc2626'],
+  [/\bpink\b|\brose\b/, '#f472b6'],
+  [/\bblue\b|\bsky\b/, '#2563eb'],
+  [/\bpurple\b|\blavender\b|\bviolet\b/, '#7c3aed'],
+  [/\borange\b/, '#ea580c'],
+  [/\byellow\b/, '#eab308'],
   [/\bblack\b/, '#000000'],
   [/\bwhite\b/, '#ffffff'],
   [/\bcharcoal\b|\bnear[- ]black\b/, '#111827'],
@@ -76,7 +90,9 @@ export function planSectionStyle(userPrompt: string): SectionStylePlan {
   const settings: Record<string, string> = {};
   const notes: string[] = [];
 
-  const bg = colorAfter(text, /(?:background|bg)(?:\s+\w+){0,4}/);
+  const bg =
+    colorAfter(text, /(?:\w+\s+){0,3}(?:background|bg)(?:\s+\w+){0,4}/) ||
+    ((/\bbackground\b|\bbg\b/.test(text) && firstColor(text)) || undefined);
   if (bg) {
     settings.bg_color = bg;
     notes.push(`bg_color=${bg}`);
@@ -110,6 +126,38 @@ export function planSectionStyle(userPrompt: string): SectionStylePlan {
     notes.push(`button_bg=${btnColor}`);
     if (btnColor === '#d4af37' || btnColor === '#ffffff') settings.button_text_color = '#111827';
     if (btnColor === '#000000' || btnColor === '#0a1628' || btnColor === '#111827') settings.button_text_color = '#ffffff';
+  }
+  if (/\bgold prices?\b/.test(text)) {
+    settings.price_color = '#d4af37';
+    notes.push('price_color=#d4af37');
+  }
+  if (/\buppercase eyebrow\b/.test(text) || (/\beyebrow\b/.test(text) && /\buppercase\b/.test(text))) {
+    settings.eyebrow_transform = 'uppercase';
+    notes.push('eyebrow_transform=uppercase');
+  } else if (/\buppercase\b/.test(text)) {
+    settings.text_transform = 'uppercase';
+    notes.push('text_transform=uppercase');
+  }
+  if (/\btablet heading\b|\bmedium tablet heading\b/.test(text)) {
+    settings.tablet_heading_size = '32';
+    notes.push('tablet_heading_size=32');
+  }
+  if (/\bhover\b/.test(text) && /\bbutton\b/.test(text)) {
+    settings.button_hover_bg = settings.button_bg === '#d4af37' ? '#b8962e' : '#0f172a';
+    notes.push('button_hover_bg');
+  }
+  if (/\bblue buttons?\b/.test(text)) {
+    settings.button_bg = '#2563eb';
+    settings.button_text_color = '#ffffff';
+    notes.push('button_bg=#2563eb');
+  }
+  if (/\bcream cards?\b/.test(text)) {
+    settings.card_bg = '#f5f0e8';
+    notes.push('card_bg=#f5f0e8');
+  }
+  if (/\bwhite text\b/.test(text)) {
+    settings.text_color = '#ffffff';
+    notes.push('text_color=#ffffff');
   }
 
   const font = detectFont(text);
@@ -154,10 +202,106 @@ export function planSectionStyle(userPrompt: string): SectionStylePlan {
     notes.push('border_radius=16');
   }
 
+  if (/\bcarousel on mobile\b|\bhorizontal scroll on mobile\b/.test(text)) {
+    settings.mobile_layout = 'carousel';
+    notes.push('mobile_layout=carousel');
+  }
+
   if (/\bfull[- ]width buttons?\b/.test(text)) {
     settings.button_width = 'full';
     settings.mobile_button_width = 'full';
     notes.push('button_width=full');
+  }
+  if (/\bfull[- ]width (?:first |primary )?button\b/.test(text) || /\bbutton 1\b.*\bfull[- ]width\b/.test(text)) {
+    settings.button_1_width = 'full';
+    notes.push('button_1_width=full');
+  }
+  if (/\bbutton 2\b.*\bfull[- ]width\b/.test(text)) {
+    settings.button_2_width = 'full';
+    notes.push('button_2_width=full');
+  }
+  const btnHover = colorAfter(text, /(?:button|cta)(?:\s+\w+){0,4}\s+hover(?:\s+\w+){0,4}/);
+  if (btnHover) {
+    settings.button_1_hover_bg = btnHover;
+    notes.push(`button_1_hover_bg=${btnHover}`);
+  }
+  if (/\bborder(?:ed)? buttons?\b/.test(text) || /\bbuttons?.{0,40}border\b/.test(text)) {
+    settings.button_1_border_width = '1';
+    settings.button_2_border_width = '1';
+    notes.push('per-button border');
+  }
+  if (/\bquantity\b/.test(text) && /\b(product|selector|cart|recommend)\b/.test(text)) {
+    settings.enable_quantity = 'true';
+    settings.recommend_show_qty = 'true';
+    settings.grid_show_qty = 'true';
+    notes.push('enable_quantity');
+  }
+  if (/\brecommend/.test(text) && /\bgrid\b/.test(text)) {
+    settings.recommend_layout = 'grid';
+    notes.push('recommend_layout=grid');
+  }
+  if (/\brecommend/.test(text) && /\bcarousel\b/.test(text)) {
+    settings.recommend_layout = 'carousel';
+    notes.push('recommend_layout=carousel');
+  }
+  if (/\bcream\b/.test(text) && /\brecommend/.test(text)) {
+    settings.recommend_card_bg = '#f5f0e8';
+    notes.push('recommend_card_bg');
+  }
+  if (/\bnavy\b/.test(text) && /\brecommend/.test(text)) {
+    settings.recommend_card_text = '#0a1628';
+    notes.push('recommend_card_text');
+  }
+  if (/\brating\b/.test(text) && /\b(collection grid|collection-grid|tabs?)\b/.test(text)) {
+    settings.grid_show_rating = 'true';
+    notes.push('grid_show_rating');
+  }
+  if (/\badd to cart\b/.test(text) && /\b(collection grid|collection-grid|tabs?)\b/.test(text)) {
+    settings.grid_show_atc = 'true';
+    notes.push('grid_show_atc');
+  }
+  const pxWidth = text.match(/\b(\d{2,3})\s*px\s*(?:wide|width)?\s*(?:button|cta)?|\bbutton[s]?\s*(?:width|wide)\s*(\d{2,3})\b/);
+  if (pxWidth) {
+    const n = pxWidth[1] || pxWidth[2];
+    settings.button_1_width = n;
+    notes.push(`button_1_width=${n}`);
+  }
+  const pxRadius = text.match(/\bbutton[s]?\s*(?:radius|rounded)\s*(\d{1,3})|\b(\d{1,3})\s*px\s*(?:button\s*)?radius\b/);
+  if (pxRadius) {
+    settings.button_1_radius = pxRadius[1] || pxRadius[2];
+    notes.push(`button_1_radius=${settings.button_1_radius}`);
+  }
+  if (/\brating\b/.test(text) && /\brecommend/.test(text)) {
+    settings.recommend_show_rating = 'true';
+    notes.push('recommend_show_rating');
+  }
+  if (/\badd to cart\b/.test(text) && /\brecommend/.test(text)) {
+    settings.recommend_show_atc = 'true';
+    notes.push('recommend_show_atc');
+  }
+  if (/\bbefore\s*(and|&|\/)\s*after\b/.test(text) || (/\bbefore\b/.test(text) && /\bafter\b/.test(text) && /\b(slider|compare|label)\b/.test(text))) {
+    const beforeLab = text.match(/before(?:\s+label)?\s+[“"']?([a-z0-9 ]{1,20})/i);
+    const afterLab = text.match(/after(?:\s+label)?\s+[“"']?([a-z0-9 ]{1,20})/i);
+    if (beforeLab) settings.before_label = beforeLab[1].trim();
+    else settings.before_label = 'Before';
+    if (afterLab) settings.after_label = afterLab[1].trim();
+    else settings.after_label = 'After';
+    notes.push('before/after labels');
+  }
+  const iconBg = colorAfter(text, /(?:icon|feature card|value card)(?:\s+\w+){0,5}(?:background|bg)/);
+  if (iconBg) {
+    settings.icon_1_bg = iconBg;
+    settings.icon_2_bg = iconBg;
+    settings.icon_3_bg = iconBg;
+    settings.icon_4_bg = iconBg;
+    notes.push(`icon_N_bg=${iconBg}`);
+  }
+  if (/\bshop now\b/.test(text) && /\bcollection/.test(text)) {
+    settings.collection_1_cta = 'Shop Now';
+    settings.collection_2_cta = 'Shop Now';
+    settings.collection_3_cta = 'Shop Now';
+    settings.collection_4_cta = 'Shop Now';
+    notes.push('collection CTAs');
   }
 
   if (/\bgenerous\b|\bspacious\b|\bair(?:y)?\b/.test(text)) {
@@ -218,7 +362,7 @@ export function applyExtractedStyle(
     }
     if (key === 'shadow' && !['none', 'soft', 'subtle', 'medium'].includes(value)) continue;
     if (key === 'gradient' && !['none', 'dark', 'gold', 'fade'].includes(value)) continue;
-    if (key.endsWith('_color') || key === 'button_bg') {
+    if (key.endsWith('_color') || key.endsWith('_bg') || key.endsWith('_border') || key === 'button_bg') {
       if (!/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(value)) continue;
     }
     next[key] = value;

@@ -42,18 +42,129 @@ function extractJsonObject(raw: string): unknown {
   }
 
   let cleaned = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
-  const start = cleaned.indexOf('{');
-  const end = cleaned.lastIndexOf('}');
-  if (start >= 0 && end > start) {
-    cleaned = cleaned.slice(start, end + 1);
-  }
-  cleaned = cleaned.replace(/(?:\/\/[^\n]*)/g, '').replace(/,\s*([\]}])/g, '$1');
+  cleaned = cleaned.replace(/[\u201C\u201D]/g, '"').replace(/[\u2018\u2019]/g, "'");
+  cleaned = stripTrailingCommas(cleaned);
 
-  try {
-    return JSON.parse(cleaned);
-  } catch {
+  const parsed = tryParseJson(cleaned) ?? tryParseJson(sliceFirstObject(cleaned)) ?? parseSequentialObjects(cleaned);
+  if (parsed == null) {
     throw new AiSectionValidationError('AI output is not valid JSON', 'INVALID_JSON');
   }
+  return parsed;
+}
+
+function tryParseJson(text: string): unknown | null {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function sliceFirstObject(text: string): string {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start >= 0 && end > start) return text.slice(start, end + 1);
+  const a0 = text.indexOf('[');
+  const a1 = text.lastIndexOf(']');
+  if (a0 >= 0 && a1 > a0) return text.slice(a0, a1 + 1);
+  return text;
+}
+
+function mergeBlueprints(items: any[]): unknown {
+  const blueprints = items.filter((item) => item && typeof item === 'object' && item.layout);
+  if (blueprints.length === 1) return blueprints[0];
+  if (blueprints.length > 1) {
+    const schema = Object.assign({}, ...blueprints.map((b) => b.schema || {}));
+    const defaultSettings = Object.assign({}, ...blueprints.map((b) => b.defaultSettings || {}));
+    return {
+      name: blueprints[0].name || 'Collections',
+      schema,
+      defaultSettings,
+      layout: {
+        type: 'container',
+        children: blueprints.map((b) => b.layout).filter(Boolean),
+      },
+    };
+  }
+  const nodes = items.filter((item) => item && typeof item === 'object' && item.type);
+  if (nodes.length) {
+    return {
+      name: 'Collections',
+      schema: {},
+      defaultSettings: {},
+      layout: { type: 'container', children: nodes },
+    };
+  }
+  return items[0] || null;
+}
+
+function parseSequentialObjects(text: string): unknown | null {
+  const trimmed = text.trim();
+  const asArray = tryParseJson(trimmed.startsWith('[') ? trimmed : `[${trimmed}]`);
+  if (Array.isArray(asArray)) {
+    const merged = mergeBlueprints(asArray);
+    if (merged) return merged;
+  }
+
+  const objects: any[] = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === '{') {
+      if (depth === 0) start = i;
+      depth += 1;
+    } else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        const piece = tryParseJson(stripTrailingCommas(text.slice(start, i + 1)));
+        if (piece) objects.push(piece);
+        start = -1;
+      }
+    }
+  }
+  if (!objects.length) return null;
+  return mergeBlueprints(objects);
+}
+
+function stripTrailingCommas(input: string): string {
+  let out = '';
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < input.length; i += 1) {
+    const ch = input[i];
+    if (inString) {
+      out += ch;
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      out += ch;
+      continue;
+    }
+    if (ch === ',') {
+      let j = i + 1;
+      while (j < input.length && /\s/.test(input[j])) j += 1;
+      if (input[j] === '}' || input[j] === ']') continue;
+    }
+    out += ch;
+  }
+  return out;
 }
 
 function collectStrings(value: unknown, acc: string[] = []): string[] {
@@ -110,7 +221,8 @@ function inferSettingType(key: string): AiSettingType {
   if (k.includes('font')) return 'font';
   if (k.includes('link') || k.includes('url') || k.includes('href')) return 'link';
   if (k.includes('show_') || k.startsWith('is_') || k.startsWith('enable_')) return 'toggle';
-  if (k.includes('end_date') || k.includes('model')) return 'text';
+  if (k.includes('end_date')) return 'datetime';
+  if (k.includes('model')) return 'text';
   if (k.includes('count') || k.includes('column') || k.includes('gap')) return 'number';
   if (k.includes('product') || k.includes('collection')) return 'resourcePicker';
   if (k.includes('description') || k.includes('rich')) return 'richtext';
@@ -216,6 +328,30 @@ function sanitizeNode(raw: unknown, depth: number, counter: { nodes: number }): 
   return clean;
 }
 
+function expandFaqArraySettings(schema: Record<string, any>, defaults: Record<string, any>) {
+  for (const key of Object.keys(schema)) {
+    const field = schema[key];
+    const type = String(field?.type || '').toLowerCase();
+    if (type !== 'array' && type !== 'list' && type !== 'repeater') continue;
+    const raw = defaults[key] ?? field?.default;
+    const items = Array.isArray(raw) ? raw : [];
+    const isFaq = /faq|question|accordion/i.test(key);
+    if (isFaq) {
+      items.slice(0, 8).forEach((item: any, i: number) => {
+        const n = i + 1;
+        const q = typeof item === 'string' ? item : item?.question || item?.q || item?.title || '';
+        const a = typeof item === 'string' ? '' : item?.answer || item?.a || item?.content || item?.text || '';
+        schema[`faq_${n}_q`] = { type: 'text', label: `Question ${n}`, default: String(q) };
+        schema[`faq_${n}_a`] = { type: 'richtext', label: `Answer ${n}`, default: String(a) };
+        if (defaults[`faq_${n}_q`] == null) defaults[`faq_${n}_q`] = String(q);
+        if (defaults[`faq_${n}_a`] == null) defaults[`faq_${n}_a`] = String(a);
+      });
+    }
+    delete schema[key];
+    delete defaults[key];
+  }
+}
+
 function ensureSettings(blueprint: {
   schema: Record<string, any>;
   defaultSettings: Record<string, any>;
@@ -225,16 +361,34 @@ function ensureSettings(blueprint: {
   const schema = { ...blueprint.schema };
   const defaults = { ...blueprint.defaultSettings };
 
+  expandFaqArraySettings(schema, defaults);
+
   for (const [key, field] of Object.entries(schema)) {
     if (!field || typeof field !== 'object') {
-      throw new AiSectionValidationError(`Invalid setting definition: ${key}`, 'INVALID_SETTING');
+      delete schema[key];
+      continue;
     }
     const type = String(field.type || '');
     if (!(AI_SETTING_TYPES as readonly string[]).includes(type)) {
-      throw new AiSectionValidationError(`Unsupported setting type "${type}" for ${key}`, 'INVALID_SETTING_TYPE');
+      delete schema[key];
+      delete defaults[key];
+      continue;
     }
     if (!field.label || typeof field.label !== 'string') {
       field.label = humanize(key);
+    }
+    if (Array.isArray(field.options)) {
+      field.options = field.options
+        .map((opt: any) => {
+          if (opt && typeof opt === 'object' && typeof opt.value === 'string') {
+            return { label: String(opt.label || opt.value), value: opt.value };
+          }
+          if (typeof opt === 'string' || typeof opt === 'number') {
+            return { label: humanize(String(opt)), value: String(opt) };
+          }
+          return null;
+        })
+        .filter(Boolean);
     }
     if (defaults[key] === undefined) {
       defaults[key] = field.default !== undefined ? field.default : type === 'toggle' ? false : '';

@@ -52,6 +52,8 @@ export const AllowedComponentTypes = z.enum([
   'size_guide',
   'whatsapp',
   'shipping',
+  'testimonial',
+  'testimonial_item',
 ]);
 
 // Responsive properties (desktop, tablet, mobile) - allow any valid CSS style property
@@ -75,7 +77,7 @@ export const AiElementNodeSchema: z.ZodType<any> = z.lazy(() =>
 
 // The Inspector Schema definition for Theme Editor
 const FieldSchema = z.object({
-  type: z.enum(['text', 'color', 'image', 'video', 'number', 'select', 'toggle', 'link', 'richtext', 'resourcePicker', 'font']),
+  type: z.enum(['text', 'color', 'image', 'video', 'number', 'select', 'toggle', 'link', 'richtext', 'resourcePicker', 'font', 'datetime']),
   label: z.string(),
   default: z.any().optional(),
   options: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
