@@ -299,7 +299,6 @@ function inferContent(types: Set<string>): Record<string, Field> {
     fields.button_link = { type: 'link', label: 'Button link', category: 'button', default: '/collections' };
   }
   if (types.has('product')) {
-    fields.product_id = { type: 'resourcePicker', label: 'Product', category: 'content', resourceType: 'product' };
     fields.enable_quantity = { type: 'toggle', label: 'Quantity selector', category: 'content', default: false };
   }
   if (types.has('collection')) {
@@ -365,6 +364,80 @@ function inferContent(types: Set<string>): Record<string, Field> {
   return fields;
 }
 
+function chromeForTypes(types: Set<string>): Record<string, Field> {
+  const has = (...t: string[]) => t.some((x) => types.has(x));
+  const keys = ['bg_color', 'padding_y', 'padding_x', 'gap', 'text_align'];
+  if (has('heading')) keys.push('heading_color', 'heading_font_family', 'heading_size', 'font_weight');
+  if (has('text')) keys.push('text_color', 'body_font_family', 'body_size', 'line_height');
+  if (has('heading') && !has('text')) keys.push('text_color');
+  if (has('row') && has('image', 'video')) keys.push('alignment', 'image_position');
+  if (has('image') && !has('before_after')) keys.push('image_width');
+  if (has('video')) keys.push('video_autoplay', 'video_controls', 'video_muted');
+  if (has('newsletter', 'contact_form', 'whatsapp', 'shipping') && !has('button')) {
+    keys.push('button_bg', 'button_text_color', 'button_radius');
+  }
+  if (has('grid', 'product', 'collection', 'icon', 'collection_grid', 'bento', 'masonry', 'recommend', 'testimonial')) {
+    keys.push('columns', 'tablet_columns');
+  }
+  if (has('product', 'collection', 'icon', 'testimonial', 'recommend', 'accordion')) {
+    keys.push('card_bg', 'card_text_color');
+  }
+  if (has('testimonial')) keys.push('testimonial_columns');
+  const out: Record<string, Field> = {};
+  keys.forEach((k) => {
+    if (AI_CHROME_SCHEMA[k]) out[k] = AI_CHROME_SCHEMA[k];
+  });
+  return out;
+}
+
+function isAllowedPersistedKey(key: string, types: Set<string>): boolean {
+  if (!key || key === 'blueprint' || key === 'layout') return false;
+  const has = (...t: string[]) => t.some((x) => types.has(x));
+  if (['bg_color', 'padding_y', 'padding_x', 'gap', 'text_align', 'shadow'].includes(key)) return true;
+  if (key === 'poster') return has('video');
+  if (/^heading/.test(key) || key === 'font_weight') return has('heading');
+  if (/^text_\d+$/.test(key) || key === 'subheading') return has('text');
+  if (/^caption_\d+$/.test(key)) return has('image');
+  if (['subheading', 'body_font_family', 'body_size', 'line_height'].includes(key)) return has('text');
+  if (key === 'text_color') return has('heading', 'text');
+  if (/^image/.test(key) || key === 'image_position' || key === 'alignment') return has('image', 'video', 'row');
+  if (/^video/.test(key)) return has('video');
+  if (/^button/.test(key)) return has('button', 'newsletter', 'contact_form', 'whatsapp', 'shipping');
+  if (['columns', 'tablet_columns'].includes(key)) return has('grid', 'product', 'collection', 'icon', 'collection_grid', 'bento', 'masonry', 'recommend', 'testimonial');
+  if (/^card_/.test(key) || key === 'border_radius') return has('product', 'collection', 'icon', 'testimonial', 'recommend', 'accordion', 'image', 'video');
+  if (/^product/.test(key) || key === 'enable_quantity' || key === 'show_rating') return has('product', 'recommend', 'product_detail', 'reviews', 'specs', 'comparison_table', 'hotspot');
+  if (/^collection/.test(key) || key === 'limit') return has('collection', 'collection_grid', 'filters');
+  if (/^faq_/.test(key) || /^accordion/.test(key)) return has('accordion');
+  if (/^t_\d+_/.test(key) || /^testimonial/.test(key)) return has('testimonial');
+  if (/^before|^after/.test(key)) return has('before_after');
+  if (key === 'end_date') return has('countdown');
+  if (key === 'placeholder') return has('newsletter');
+  if (key === 'phone' || key === 'greeting') return has('whatsapp');
+  if (key === 'cod_message') return has('shipping');
+  if (key === 'pageSlug') return has('page_content');
+  if (key === 'model') return has('model3d');
+  if (key === 'interval' || /^slide_/.test(key)) return has('slider', 'slide');
+  if (/^tab_/.test(key)) return has('tabs', 'tab');
+  if (/^tl_/.test(key) || key === 'orientation') return has('timeline', 'before_after');
+  if (/^pin_/.test(key)) return has('hotspot');
+  if (/^icon_/.test(key)) return has('icon');
+  if (/^logo_/.test(key) || key === 'marquee_text' || key === 'speed') return has('marquee');
+  if (/^spec_/.test(key)) return has('specs');
+  if (/^size_/.test(key)) return has('size_guide');
+  if (/^frame_/.test(key)) return has('frame_scroll');
+  if (/^row_\d+_position$/.test(key)) return has('row');
+  if (/^cell_\d+_/.test(key)) return has('bento', 'bento_cell');
+  if (/^before_\d+$/.test(key) || /^after_\d+$/.test(key) || /^before_label_\d+$/.test(key) || /^after_label_\d+$/.test(key)) return has('before_after');
+  if (key === 'mobile_layout') return has('grid', 'product', 'collection', 'collection_grid', 'bento', 'recommend');
+  if (key === 'shadow' || key === 'hover_effect') return has('product', 'collection', 'icon', 'testimonial', 'recommend', 'bento_cell');
+  if (key === 'compare_show_buy' || key === 'compare_show_qty' || key === 'compare_show_atc') return has('comparison_table');
+  if (/^row_\d+_/.test(key)) return has('row', 'comparison_table');
+  if (/^recommend/.test(key) || /^recommendation_/.test(key)) return has('recommend');
+  if (/^grid_show_/.test(key)) return has('collection_grid', 'filters');
+  if (key === 'product_id') return has('reviews', 'product_detail', 'specs', 'recommend');
+  return false;
+}
+
 export function mergeEditableBlueprint(input: {
   name: string;
   schema: Record<string, any>;
@@ -373,51 +446,33 @@ export function mergeEditableBlueprint(input: {
 }) {
   const types = collectTypes(input.layout);
   const inferred = inferContent(types);
-  const schema: Record<string, any> = {
-    ...input.schema,
-    ...inferred,
-    ...AI_CHROME_SCHEMA,
-  };
+  const chrome = chromeForTypes(types);
+  const schema: Record<string, any> = { ...inferred, ...chrome };
+  Object.entries(input.schema || {}).forEach(([key, field]) => {
+    if (isAllowedPersistedKey(key, types) && field && typeof field === 'object') {
+      schema[key] = schema[key] || field;
+    }
+  });
   delete schema.blueprint;
-
-  if (!types.has('video')) {
-    delete schema.video_autoplay;
-    delete schema.video_controls;
-    delete schema.video_muted;
-  }
-  if (!types.has('image') && !types.has('video')) {
-    delete schema.image_position;
-    delete schema.image_width;
-    delete schema.mobile_image_width;
-  }
-  if (!types.has('grid') && !types.has('product') && !types.has('collection') && !types.has('icon') && !types.has('collection_grid')) delete schema.columns;
-  if (!types.has('button') && !types.has('newsletter') && !types.has('contact_form') && !types.has('slider')) {
-    /* keep button chrome so extracted styles remain editable */
-  }
-  if (!types.has('row') && !types.has('carousel')) delete schema.direction;
-
-  const productLike = types.has('product') || Object.keys(schema).some((k) => /product/i.test(k));
-  if (productLike) {
-    schema.product_id = {
-      type: 'resourcePicker',
-      label: 'Product',
-      category: 'content',
-      resourceType: 'product',
-    };
+  if (hasProductChrome(types)) {
     delete schema.product_link;
     delete schema.product_url;
     delete schema.product_href;
     delete schema.product_title;
     delete schema.product_price;
     delete schema.product_image;
-    if (schema.product && schema.product.type !== 'resourcePicker') delete schema.product;
   }
 
-  const defaultSettings = { ...input.defaultSettings };
+  const defaultSettings: Record<string, any> = {};
   for (const [key, field] of Object.entries(schema)) {
     if (!field.category && AI_CHROME_SCHEMA[key]) field.category = AI_CHROME_SCHEMA[key].category;
-    if (defaultSettings[key] === undefined) defaultSettings[key] = field.default;
+    const incoming = input.defaultSettings?.[key];
+    defaultSettings[key] = incoming !== undefined ? incoming : field.default;
   }
 
   return { ...input, schema, defaultSettings };
+}
+
+function hasProductChrome(types: Set<string>) {
+  return types.has('product') || types.has('recommend') || types.has('product_detail') || types.has('reviews');
 }

@@ -238,14 +238,14 @@ export const ALLOWED_PROPS: Record<AiComponentType, readonly string[]> = {
   row: ['role', 'reverseOnMobile', 'image_position', 'slot'],
   column: ['role'],
   grid: ['columns', 'tabletColumns', 'mobileColumns', 'role'],
-  stack: ['role'],
+  stack: ['role', 'overlay', 'overlay_content'],
   carousel: ['role', 'itemWidth'],
-  heading: ['content', 'text', 'heading', 'title', 'variant'],
-  text: ['content', 'text', 'subheading', 'description'],
-  image: ['src', 'url', 'image', 'image_url', 'alt'],
-  video: ['src', 'url', 'video', 'video_url', 'poster', 'autoplay', 'muted', 'controls', 'loop'],
-  button: ['label', 'text', 'button_text', 'content', 'link', 'url', 'href', 'button_link', 'variant', 'bg', 'color', 'width', 'radius', 'borderColor', 'borderWidth', 'hoverBg', 'hoverColor', 'hoverBorder'],
-  product: ['title', 'price', 'image', 'src', 'url', 'link', 'button_label', 'showPrice', 'showAddToCart'],
+  heading: ['content', 'text', 'heading', 'title', 'variant', 'slot'],
+  text: ['content', 'text', 'subheading', 'description', 'slot'],
+  image: ['src', 'url', 'image', 'image_url', 'alt', 'slot', 'caption'],
+  video: ['src', 'url', 'video', 'video_url', 'poster', 'autoplay', 'muted', 'controls', 'loop', 'slot'],
+  button: ['label', 'text', 'button_text', 'content', 'link', 'url', 'href', 'button_link', 'variant', 'bg', 'color', 'width', 'radius', 'borderColor', 'borderWidth', 'hoverBg', 'hoverColor', 'hoverBorder', 'slot'],
+  product: ['title', 'price', 'image', 'src', 'url', 'link', 'button_label', 'showPrice', 'showAddToCart', 'slot'],
   collection: ['title', 'image', 'src', 'url', 'link', 'itemCount', 'description', 'cta', 'cta_link', 'cta_style', 'cta_visible', 'cta_bg', 'cta_color', 'cta_border', 'cta_radius', 'collection_id'],
   accordion: ['title', 'mode', 'icon'],
   accordion_item: ['question', 'answer', 'open'],
@@ -263,7 +263,7 @@ export const ALLOWED_PROPS: Record<AiComponentType, readonly string[]> = {
   frame_scroll: ['heading', 'description'],
   product_detail: ['product_id'],
   tabs: ['active'],
-  tab: ['label', 'collection_id'],
+  tab: ['label', 'collection_id', 'product_id', 'slot'],
   filters: ['collection_id', 'sort'],
   comparison_table: ['highlight'],
   table_row: ['label', 'c1', 'c2', 'c3', 'c4'],
@@ -271,9 +271,9 @@ export const ALLOWED_PROPS: Record<AiComponentType, readonly string[]> = {
   timeline: ['orientation'],
   timeline_item: ['date', 'heading', 'description', 'image'],
   bento: ['columns'],
-  bento_cell: ['colSpan', 'rowSpan'],
+  bento_cell: ['colSpan', 'rowSpan', 'slot'],
   masonry: ['columns'],
-  before_after: ['before', 'after', 'position', 'orientation', 'before_label', 'after_label'],
+  before_after: ['before', 'after', 'position', 'orientation', 'before_label', 'after_label', 'slot'],
   hotspot: ['src', 'image'],
   hotspot_pin: ['x', 'y', 'label', 'heading', 'description', 'product_id'],
   marquee: ['text', 'direction', 'speed'],
@@ -376,10 +376,10 @@ export const UNSAFE_CONTENT_PATTERN =
 
 export const BINDING_PATTERN = /\{\{settings\.([a-zA-Z][a-zA-Z0-9_]*)\}\}/g;
 
-export const MAX_LAYOUT_DEPTH = Number(process.env.AI_MAX_LAYOUT_DEPTH || 10);
-export const MAX_LAYOUT_NODES = Number(process.env.AI_MAX_LAYOUT_NODES || 64);
-export const MAX_CHILDREN = Number(process.env.AI_MAX_CHILDREN || 16);
-export const MAX_SETTINGS = Number(process.env.AI_MAX_SETTINGS || 160);
+export const MAX_LAYOUT_DEPTH = Number(process.env.AI_MAX_LAYOUT_DEPTH || 8);
+export const MAX_LAYOUT_NODES = Number(process.env.AI_MAX_LAYOUT_NODES || 200);
+export const MAX_CHILDREN = Number(process.env.AI_MAX_CHILDREN || 24);
+export const MAX_SETTINGS = Number(process.env.AI_MAX_SETTINGS || 400);
 export const MAX_SETTING_STRING = Number(process.env.AI_MAX_SETTING_STRING || 2000);
 export const MAX_BLUEPRINT_CHARS = Number(process.env.AI_BLUEPRINT_MAX_CHARS || 120000);
 

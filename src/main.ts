@@ -13,7 +13,8 @@ async function bootstrap() {
   const app = await NestFactory.createApplicationContext(WorkerAppModule, {
     logger: ['log', 'error', 'warn'],
   });
-  out(`started rss=${heapMb()}mb pid=${process.pid}`);
+  const deepseekModel = (process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash').trim();
+  out(`started rss=${heapMb()}mb pid=${process.pid} DEEPSEEK_MODEL=${deepseekModel}`);
 
   const port = parseInt(process.env.PORT || '8080', 10);
   const server = createServer((_req, res) => {

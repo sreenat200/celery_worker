@@ -7,15 +7,22 @@ import { PrismaService } from '../prisma/prisma.service';
 import { planSectionLayout } from './ai-section-layout-planner';
 import { applyExtractedStyle, planSectionStyle } from './ai-section-style-planner';
 import {
+  isBeforeAfterPrompt,
   isFaqPrompt,
   isLuxuryComboPrompt,
+  isRepeatingRowsPrompt,
+  isSimpleBannerPrompt,
   isVideoShowcasePrompt,
+  synthesizeBeforeAfterBlueprint,
   synthesizeCollectionBlocksBlueprint,
   synthesizeFaqBlueprint,
   synthesizeLuxuryComboBlueprint,
+  synthesizeRepeatingRowsBlueprint,
+  synthesizeSimpleBannerBlueprint,
   synthesizeTestimonialBlueprint,
   synthesizeVideoShowcaseBlueprint,
 } from './ai-section-synthesize';
+import { composeBlueprint, shouldCompose } from './ai-section-compose';
 import { buildCustomSectionSystemPrompt, buildCustomSectionUserPrompt } from './ai-section-prompt';
 import { AiSectionValidationError, validateAiSectionBlueprint } from './ai-section-validator';
 import { validateStoreResources } from './ai-section-resources';
@@ -69,7 +76,7 @@ export class AiCustomSectionRunner implements OnModuleInit, OnModuleDestroy {
       out(`ERROR ${err.message}`);
     });
 
-    out(`Listening on queue=custom-section-builder concurrency=${concurrency}`);
+    out(`Listening on queue=custom-section-builder concurrency=${concurrency} DEEPSEEK_MODEL=${this.deepSeek.getModel()}`);
   }
 
   async onModuleDestroy() {
@@ -106,6 +113,9 @@ export class AiCustomSectionRunner implements OnModuleInit, OnModuleDestroy {
     const useTestimonials = /\btestimonials?\b/i.test(promptText);
     const useFaq = isFaqPrompt(promptText);
     const useVideoShowcase = isVideoShowcasePrompt(promptText);
+    const useSimpleBanner = isSimpleBannerPrompt(promptText);
+    const useBeforeAfter = isBeforeAfterPrompt(promptText);
+    const useRepeatingRows = isRepeatingRowsPrompt(promptText);
     const useLuxuryCombo = isLuxuryComboPrompt(promptText);
     const useDeterministic =
       !useTestimonials &&
@@ -113,6 +123,18 @@ export class AiCustomSectionRunner implements OnModuleInit, OnModuleDestroy {
       (plan.suggestedTree.includes('row x4') ||
         /\b\d+\s+(?:separate\s+)?collection sections\b/i.test(promptText) ||
         (/\bnecklaces?\b/i.test(promptText) && /\bearrings?\b/i.test(promptText)));
+    if (shouldCompose(promptText, plan)) {
+      const synthesized = composeBlueprint(promptText, plan, style);
+      const validated = validateAiSectionBlueprint(JSON.stringify(synthesized));
+      validated.defaultSettings = applyExtractedStyle(
+        { ...synthesized.defaultSettings, ...(validated.defaultSettings || {}) },
+        style.settings,
+      );
+      const bound = await this.bindStoreProducts(validated, Number(storeId), promptText);
+      await validateStoreResources(this.prisma, Number(storeId), bound.defaultSettings || {});
+      await this.saveBlueprint(sectionId, bound, 'planner');
+      return { success: true, model: 'planner', name: bound.name, plan: 'compose' };
+    }
     if (useLuxuryCombo) {
       const synthesized = synthesizeLuxuryComboBlueprint(promptText, style);
       const validated = validateAiSectionBlueprint(JSON.stringify(synthesized));
@@ -124,6 +146,36 @@ export class AiCustomSectionRunner implements OnModuleInit, OnModuleDestroy {
       await validateStoreResources(this.prisma, Number(storeId), bound.defaultSettings || {});
       await this.saveBlueprint(sectionId, bound, 'planner');
       return { success: true, model: 'planner', name: bound.name, plan: 'luxury-combo' };
+    }
+    if (useRepeatingRows) {
+      const synthesized = synthesizeRepeatingRowsBlueprint(promptText, style);
+      const validated = validateAiSectionBlueprint(JSON.stringify(synthesized));
+      validated.defaultSettings = applyExtractedStyle(
+        { ...synthesized.defaultSettings, ...(validated.defaultSettings || {}) },
+        style.settings,
+      );
+      await this.saveBlueprint(sectionId, validated, 'planner');
+      return { success: true, model: 'planner', name: validated.name, plan: 'repeating-rows' };
+    }
+    if (useBeforeAfter) {
+      const synthesized = synthesizeBeforeAfterBlueprint(promptText, style);
+      const validated = validateAiSectionBlueprint(JSON.stringify(synthesized));
+      validated.defaultSettings = applyExtractedStyle(
+        { ...synthesized.defaultSettings, ...(validated.defaultSettings || {}) },
+        style.settings,
+      );
+      await this.saveBlueprint(sectionId, validated, 'planner');
+      return { success: true, model: 'planner', name: validated.name, plan: 'before-after' };
+    }
+    if (useSimpleBanner) {
+      const synthesized = synthesizeSimpleBannerBlueprint(promptText, style);
+      const validated = validateAiSectionBlueprint(JSON.stringify(synthesized));
+      validated.defaultSettings = applyExtractedStyle(
+        { ...synthesized.defaultSettings, ...(validated.defaultSettings || {}) },
+        style.settings,
+      );
+      await this.saveBlueprint(sectionId, validated, 'planner');
+      return { success: true, model: 'planner', name: validated.name, plan: 'simple-banner' };
     }
     if (useVideoShowcase) {
       const synthesized = synthesizeVideoShowcaseBlueprint(promptText, style);

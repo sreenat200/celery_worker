@@ -5,8 +5,9 @@ import { join } from 'node:path';
 import { AI_COMPONENT_TYPES } from './ai-section-component-registry';
 import { validateAiSectionBlueprint, AiSectionValidationError } from './ai-section-validator';
 import { planSectionLayout } from './ai-section-layout-planner';
+import { composeBlueprint, shouldCompose } from './ai-section-compose';
 import { collectResourceRefs } from './ai-section-resources';
-import { isFaqPrompt, isLuxuryComboPrompt, synthesizeFaqBlueprint, synthesizeLuxuryComboBlueprint } from './ai-section-synthesize';
+import { isFaqPrompt, isLuxuryComboPrompt, isRepeatingRowsPrompt, isSimpleBannerPrompt, synthesizeFaqBlueprint, synthesizeLuxuryComboBlueprint, synthesizeRepeatingRowsBlueprint, synthesizeSimpleBannerBlueprint } from './ai-section-synthesize';
 import { planSectionStyle } from './ai-section-style-planner';
 
 const shared = JSON.parse(
@@ -113,6 +114,136 @@ describe('planner', () => {
   it('plans specifications as specs', () => {
     const plan = planSectionLayout('product specifications section');
     assert.ok(plan.components.includes('specs'));
+  });
+});
+
+describe('UCSE compose contract', () => {
+  const style = () => planSectionStyle('navy gold serif');
+  const run = (prompt: string) => {
+    const plan = planSectionLayout(prompt);
+    assert.equal(shouldCompose(prompt, plan), true, prompt);
+    const bp = composeBlueprint(prompt, plan, style());
+    return validateAiSectionBlueprint(JSON.stringify(bp));
+  };
+  const types = (bp: any) => JSON.stringify(bp.layout);
+
+  it('1 bento six independent cells', () => {
+    const bp = run('Create a bento section with six independently styled cells, different sizes, images, headings, descriptions, buttons');
+    assert.equal((types(bp).match(/"type":"bento_cell"/g) || []).length, 6);
+    assert.ok(bp.layout.id);
+  });
+  it('2 three independent tabs', () => {
+    const bp = run('Create a tabs section with three tabs, each with an independent collection and independent styling.');
+    assert.equal((types(bp).match(/"type":"tab"/g) || []).length, 3);
+    assert.ok(bp.schema.tab_1_collection_id);
+    assert.ok(bp.schema.tab_3_collection_id);
+  });
+  it('3 video commerce with products', () => {
+    const bp = run('Create a video commerce section with video, poster, overlay, heading, text, multiple buttons, and a live product carousel below the video.');
+    assert.ok(types(bp).includes('video'));
+    assert.ok(types(bp).includes('product'));
+    assert.ok(bp.schema.poster);
+  });
+  it('4 three independent before/after blocks', () => {
+    const bp = run('Create three independent before/after blocks, each with different images, labels, heading, description, CTA');
+    assert.equal((types(bp).match(/"type":"before_after"/g) || []).length, 3);
+  });
+  it('5 sticky story items', () => {
+    const bp = run('Create a sticky story section with three independent story items, each with image, heading, description, caption, button');
+    assert.ok(types(bp).includes('sticky_split'));
+  });
+  it('6 four product comparison', () => {
+    const bp = run('Create a product comparison section with four live product columns, each with product picker, image, name, price, rating, quantity, add to cart, buy now');
+    assert.ok(bp.schema.product_4);
+    assert.ok(types(bp).includes('comparison_table'));
+  });
+  it('7 responsive grid to carousel', () => {
+    const bp = run('Create a grid section that is desktop 4-column grid, tablet 2-column grid, mobile single-column carousel with mobile-only horizontal scrolling');
+    assert.equal(bp.defaultSettings.columns, '4');
+    assert.equal(bp.defaultSettings.tablet_columns, '2');
+    assert.equal(bp.defaultSettings.mobile_layout, 'carousel');
+  });
+  it('8 complex luxury composition', () => {
+    const bp = run('Create a luxury commerce section containing hero, buttons, feature cards, product carousel, collection grid, testimonials, and FAQ');
+    const t = types(bp);
+    assert.ok(t.includes('icon') || t.includes('grid'));
+    assert.ok(t.includes('testimonial'));
+    assert.ok(t.includes('accordion'));
+  });
+  it('9 four independently styled cards', () => {
+    const bp = run('Create a section with four cards, each containing heading, text, button, and image');
+    assert.ok((types(bp).match(/"type":"heading"/g) || []).length >= 4);
+  });
+  it('10 deeply nested sticky composition', () => {
+    const bp = run('Create a deeply nested section with split layout containing sticky image on one side and scrolling stack on the other. The stack contains heading, rich text, product carousel, accordion, and before/after block');
+    const t = types(bp);
+    assert.ok(t.includes('sticky_split'));
+    assert.ok(t.includes('accordion'));
+    assert.ok(t.includes('before_after') || t.includes('product'));
+  });
+});
+
+describe('universal compose', () => {
+  it('composes bento, tabs, compare, sticky, video commerce, and multi before-after', () => {
+    const style = planSectionStyle('navy gold serif');
+    const bento = composeBlueprint('six-cell luxury bento layout', planSectionLayout('six-cell luxury bento layout'), style);
+    assert.ok(JSON.stringify(bento.layout).includes('bento_cell'));
+    const tabs = composeBlueprint('three tabs with a different live collection inside each tab', planSectionLayout('three tabs with collection'), style);
+    assert.equal((JSON.stringify(tabs.layout).match(/"type":"tab"/g) || []).length, 3);
+    const ba = composeBlueprint('three independent before-and-after comparison blocks', planSectionLayout('three independent before and after blocks'), style);
+    assert.equal((JSON.stringify(ba.layout).match(/"type":"before_after"/g) || []).length, 3);
+    const sticky = composeBlueprint('four independent story items beside a sticky image', planSectionLayout('sticky image with four story items'), style);
+    assert.ok(JSON.stringify(sticky.layout).includes('sticky_split'));
+    const video = composeBlueprint('video commerce with overlay, two buttons, and live product carousel', planSectionLayout('video overlay products carousel'), style);
+    assert.ok(JSON.stringify(video.layout).includes('video'));
+    assert.ok(JSON.stringify(video.layout).includes('product'));
+    const cmp = composeBlueprint('four-product live comparison', planSectionLayout('compare four products'), style);
+    assert.ok(cmp.schema.product_4);
+    const cards = composeBlueprint('six collection cards 3 columns desktop 2 columns tablet carousel on mobile', planSectionLayout('six collection cards carousel on mobile'), style);
+    assert.equal(cards.defaultSettings.mobile_layout, 'carousel');
+    assert.equal(shouldCompose('one live product and a 2x2 collection grid', planSectionLayout('one live product and a 2x2 collection grid')), true);
+  });
+});
+
+describe('repeating rows composer', () => {
+  it('plans and synthesizes four independent story rows', () => {
+    const prompt = 'Create four story rows with independent images, captions, headings, descriptions, and buttons. Alternate the image placement independently for each row.';
+    assert.equal(isRepeatingRowsPrompt(prompt), true);
+    assert.equal(isSimpleBannerPrompt(prompt), false);
+    const plan = planSectionLayout(prompt);
+    assert.ok(plan.suggestedTree.includes('row x4'));
+    const bp = synthesizeRepeatingRowsBlueprint(prompt, planSectionStyle(prompt));
+    const validated = validateAiSectionBlueprint(JSON.stringify(bp));
+    const rows = JSON.stringify(validated.layout).match(/"type":"row"/g) || [];
+    assert.equal(rows.length, 4);
+    assert.ok(validated.defaultSettings.heading_1);
+    assert.ok(validated.defaultSettings.heading_4);
+    assert.equal(validated.defaultSettings.row_1_position, 'left');
+    assert.equal(validated.defaultSettings.row_2_position, 'right');
+  });
+});
+
+describe('simple banner synthesizer', () => {
+  it('accepts mixed select options and synthesizes a banner', () => {
+    const prompt = 'Create a simple collection banner with a heading, short description, collection image, and Shop Now button';
+    assert.equal(isSimpleBannerPrompt(prompt), true);
+    const bp = synthesizeSimpleBannerBlueprint(prompt, planSectionStyle(prompt));
+    const validated = validateAiSectionBlueprint(JSON.stringify(bp));
+    assert.ok(JSON.stringify(validated.layout).includes('image'));
+    const mixed = validateAiSectionBlueprint(JSON.stringify({
+      name: 'Banner',
+      schema: {
+        text_align: {
+          type: 'select',
+          label: 'Align',
+          default: 'left',
+          options: [{ label: 'Left', value: 'left' }, 'center', { value: 'right' }],
+        },
+      },
+      defaultSettings: { text_align: 'left' },
+      layout: { type: 'container', children: [{ type: 'heading' }] },
+    }));
+    assert.ok(mixed.schema.text_align);
   });
 });
 

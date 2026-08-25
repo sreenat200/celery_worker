@@ -147,10 +147,6 @@ export function planSectionStyle(userPrompt: string): SectionStylePlan {
     settings.text_transform = 'uppercase';
     notes.push('text_transform=uppercase');
   }
-  if (/\btablet heading\b|\bmedium tablet heading\b/.test(text)) {
-    settings.tablet_heading_size = '32';
-    notes.push('tablet_heading_size=32');
-  }
   if (/\bhover\b/.test(text) && /\bbutton\b/.test(text)) {
     settings.button_hover_bg = settings.button_bg === '#d4af37' ? '#b8962e' : '#0f172a';
     notes.push('button_hover_bg');

@@ -69,18 +69,34 @@ const StyleSchema = z.object({
 export const AiElementNodeSchema: z.ZodType<any> = z.lazy(() =>
   z.object({
     type: AllowedComponentTypes,
+    id: z.string().optional(),
     style: StyleSchema.optional(),
-    props: z.record(z.string(), z.any()).optional(), // specific props like src, alt, variant
+    props: z.record(z.string(), z.any()).optional(),
+    binding: z.record(z.string(), z.any()).optional(),
     children: z.array(AiElementNodeSchema).optional(),
   }).strict()
 );
 
 // The Inspector Schema definition for Theme Editor
+const SelectOptionSchema = z.preprocess((opt) => {
+  if (typeof opt === 'string' || typeof opt === 'number') {
+    return { label: String(opt), value: String(opt) };
+  }
+  if (opt && typeof opt === 'object') {
+    const rec = opt as Record<string, unknown>;
+    const value = rec.value ?? rec.id ?? rec.label ?? rec.name;
+    const label = rec.label ?? rec.name ?? rec.value ?? value;
+    if (value == null) return undefined;
+    return { label: String(label), value: String(value) };
+  }
+  return undefined;
+}, z.object({ label: z.string(), value: z.string() }));
+
 const FieldSchema = z.object({
   type: z.enum(['text', 'color', 'image', 'video', 'number', 'select', 'toggle', 'link', 'richtext', 'resourcePicker', 'font', 'datetime']),
   label: z.string(),
   default: z.any().optional(),
-  options: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
+  options: z.array(SelectOptionSchema).optional(),
   resourceType: z.enum(['product', 'collection', 'page', 'menu']).optional(),
   category: z.string().optional(),
 }).strict();

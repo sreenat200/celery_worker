@@ -322,9 +322,18 @@ function sanitizeNode(raw: unknown, depth: number, counter: { nodes: number }): 
   }
 
   const clean: Record<string, unknown> = { type };
+  if (typeof node.id === 'string' && node.id.trim()) clean.id = node.id.trim().slice(0, 80);
   if (Object.keys(style).length) clean.style = style;
   if (Object.keys(props).length) clean.props = props;
   if (children && children.length) clean.children = children;
+  if (node.binding && typeof node.binding === 'object' && !Array.isArray(node.binding)) {
+    const b = node.binding as Record<string, unknown>;
+    const binding: Record<string, unknown> = {};
+    if (typeof b.type === 'string') binding.type = b.type;
+    if (typeof b.id === 'string') binding.id = b.id;
+    if (Array.isArray(b.ids)) binding.ids = b.ids.filter((x) => typeof x === 'string').slice(0, 24);
+    if (Object.keys(binding).length) clean.binding = binding;
+  }
   return clean;
 }
 

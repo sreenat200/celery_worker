@@ -34,6 +34,16 @@ function has(text: string, ...patterns: RegExp[]): boolean {
   return patterns.some((p) => p.test(text));
 }
 
+export function detectRepeatRows(text: string): number | null {
+  const t = (text || '').toLowerCase();
+  if (/\binstagram\b|\bstory viewer\b|\bstories section\b/.test(t)) return null;
+  const words: Record<string, number> = { two: 2, three: 3, four: 4, five: 5, six: 6 };
+  const m = t.match(/\b(two|three|four|five|six|2|3|4|5|6)\s+(?:story\s+)?rows\b/);
+  if (!m) return null;
+  const n = words[m[1]] || parseInt(m[1], 10);
+  return n >= 2 && n <= 8 ? n : null;
+}
+
 function detectColumns(text: string): number | null {
   const numeric = text.match(/\b(\d+)\s*[- ]?\s*(?:col(?:umn)?s?|grid)\b/);
   if (numeric) {
@@ -103,10 +113,12 @@ export function planSectionLayout(userPrompt: string): SectionLayoutPlan {
   const wantsVideo = has(lower, /\bvideos?\b|\bvideo section\b|\breel\b/) && !wantsStories && !wantsSlider;
   const wantsImage = has(lower, /\bimages?\b|\bphotos?\b|\bpictures?\b/);
   const wantsProduct = has(lower, /\bproducts?\b|\badd to cart\b|\bprices?\b/) && !wantsCollectionGrid && !wantsPdp && !wantsReviews;
+  const repeatRows = detectRepeatRows(lower);
   const wantsCollectionBlocks =
-    has(lower, /\b\d+\s+(?:separate\s+)?collection sections\b/) ||
-    (has(lower, /\beach section\b/) && has(lower, /\bcollection\b/)) ||
-    (has(lower, /\bnecklaces?\b/) && has(lower, /\bearrings?\b/));
+    !repeatRows &&
+    (has(lower, /\b\d+\s+(?:separate\s+)?collection sections\b/) ||
+      (has(lower, /\beach section\b/) && has(lower, /\bcollection\b/)) ||
+      (has(lower, /\bnecklaces?\b/) && has(lower, /\bearrings?\b/)));
   const wantsCollection = has(lower, /\bcollections?\b/) && !wantsCollectionGrid;
   const wantsCarousel = has(lower, /\bcarousel\b|\bhorizontally scrolling\b|\bhorizontal scroll\b|\bsliding\b/) && !wantsSlider;
   const wantsMobileCarousel = has(lower, /\bcarousel on mobile\b|\bhorizontal scroll on mobile\b/);
@@ -159,7 +171,9 @@ export function planSectionLayout(userPrompt: string): SectionLayoutPlan {
     ((layoutDirection === 'split' || layoutDirection === 'horizontal') && !wantsProduct);
 
   const components: string[] = ['container'];
-  if (layoutDirection === 'carousel') components.push('carousel');
+  if (repeatRows) {
+    components.push('stack', 'row', 'column');
+  } else if (layoutDirection === 'carousel') components.push('carousel');
   else if (layoutDirection === 'grid') components.push('grid');
   else if (layoutDirection === 'split' || layoutDirection === 'horizontal') components.push('row', 'column');
   else if (layoutDirection === 'stacked' || layoutDirection === 'vertical' || layoutDirection === 'banner') {
@@ -272,6 +286,13 @@ export function planSectionLayout(userPrompt: string): SectionLayoutPlan {
   if (wantsMobileCarousel) constraints.push('Use a product/collection grid on desktop and set mobile_layout to carousel.');
   constraints.push('On mobile, stack horizontal panes (media above text) unless carousel scrolling was requested.');
   constraints.push('Do not invent features the user did not request.');
+  if (repeatRows) {
+    constraints.push(`Compose ${repeatRows} independent stacked rows from primitives only: row + image + heading + text + button.`);
+    constraints.push('Do not use stories, collection, or product nodes unless the user asked for them.');
+    constraints.push('Each row is independently editable: image_N, caption_N, heading_N, text_N, button_N_text, button_N_link, button_N_bg, button_N_color, button_N_border_color, button_N_radius, row_N_position.');
+    constraints.push('Alternate row_N_position left/right unless the user specified a single side.');
+    constraints.push('On mobile each row stacks image above copy.');
+  }
   if (wantsCollectionBlocks) {
     constraints.push('Emit ONE blueprint with a single container. Do not emit multiple JSON objects.');
     constraints.push('Build 4 stacked rows: image + heading + text + Shop Now button. Leave collection IDs empty.');
@@ -316,6 +337,18 @@ export function planSectionLayout(userPrompt: string): SectionLayoutPlan {
       overlay,
   });
 
+  if (repeatRows) {
+    suggestedTree = [
+      'container',
+      '  stack',
+      `    row x${repeatRows} (alternate image left/right, mobile: column)`,
+      '      image + caption_N',
+      '      column',
+      '        heading_N',
+      '        text_N',
+      '        button_N',
+    ].join('\n');
+  }
   if (wantsCollectionBlocks) {
     suggestedTree = [
       'container',
