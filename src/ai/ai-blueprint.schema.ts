@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-// Allowed component primitives
+// Allowed component primitives (v2.0 — extended commerce registry)
 export const AllowedComponentTypes = z.enum([
   'container',
   'row',
@@ -54,27 +54,61 @@ export const AllowedComponentTypes = z.enum([
   'shipping',
   'testimonial',
   'testimonial_item',
+  // Commerce primitives (v2.0)
+  'product_price',
+  'product_badge',
+  'variant_selector',
+  'quantity_selector',
+  'product_gallery',
 ]);
 
-// Responsive properties (desktop, tablet, mobile) - allow any valid CSS style property
+// Responsive + interactive properties (desktop, tablet, mobile, hover, active)
 const ResponsiveStyleSchema = z.record(z.string(), z.union([z.string(), z.number()]));
 
 const StyleSchema = z.object({
   desktop: ResponsiveStyleSchema.optional(),
   tablet: ResponsiveStyleSchema.optional(),
   mobile: ResponsiveStyleSchema.optional(),
+  hover: ResponsiveStyleSchema.optional(),
+  active: ResponsiveStyleSchema.optional(),
 });
 
-// Recursive component node definition
+// Repeater: repeat the node over a resolved items source
+const RepeaterSchema = z
+  .object({
+    itemsSource: z.string().min(1),
+    itemAlias: z.string().min(1),
+    indexAlias: z.string().optional(),
+    limit: z.number().int().positive().optional(),
+  })
+  .strict();
+
+const EventsSchema = z
+  .object({
+    onClick: z
+      .enum(['addToCart', 'openModal', 'scrollTo', 'toggleAccordion', 'navigate'])
+      .optional(),
+    payload: z.record(z.string(), z.any()).optional(),
+  })
+  .strict();
+
+// Recursive universal element node definition
 export const AiElementNodeSchema: z.ZodType<any> = z.lazy(() =>
-  z.object({
-    type: AllowedComponentTypes,
-    id: z.string().optional(),
-    style: StyleSchema.optional(),
-    props: z.record(z.string(), z.any()).optional(),
-    binding: z.record(z.string(), z.any()).optional(),
-    children: z.array(AiElementNodeSchema).optional(),
-  }).strict()
+  z
+    .object({
+      type: AllowedComponentTypes,
+      id: z.string().optional(),
+      name: z.string().optional(),
+      condition: z.string().optional(),
+      repeater: RepeaterSchema.optional(),
+      style: StyleSchema.optional(),
+      props: z.record(z.string(), z.any()).optional(),
+      binding: z.record(z.string(), z.any()).optional(),
+      bindings: z.record(z.string(), z.string()).optional(),
+      events: EventsSchema.optional(),
+      children: z.array(AiElementNodeSchema).optional(),
+    })
+    .strict(),
 );
 
 // The Inspector Schema definition for Theme Editor
@@ -102,7 +136,10 @@ const FieldSchema = z.object({
 }).strict();
 
 export const AiSectionBlueprintSchema = z.object({
+  version: z.string().optional(),
   name: z.string().min(1),
+  category: z.enum(['hero', 'commerce', 'content', 'social', 'promotional', 'custom']).optional(),
+  description: z.string().optional(),
   schema: z.record(z.string(), FieldSchema),
   defaultSettings: z.record(z.string(), z.any()),
   layout: AiElementNodeSchema,

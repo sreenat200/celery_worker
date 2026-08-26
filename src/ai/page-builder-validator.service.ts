@@ -10,6 +10,17 @@ import {
   type GeneratedSectionBlock,
 } from '../jobs/bullmq.constants';
 import { PrismaService } from '../prisma/prisma.service';
+import { UniversalPageBlueprintSchema } from './universal-page-blueprint.schema';
+import {
+  normalizeComponentType,
+  ALLOWED_PROPS,
+  ALLOWED_STYLE_PROPERTIES,
+} from './ai-section-component-registry';
+import { validateStoreResources } from './ai-section-resources';
+import {
+  getAllowedSectionsForPageType,
+  type PageType,
+} from './page-capability-registry';
 
 export const THEME_DEFAULT_IMAGES = {
   hero: '/images/themes/theme_hero_luxury_banner.jpg',
@@ -18,6 +29,8 @@ export const THEME_DEFAULT_IMAGES = {
   image_with_text: '/images/themes/theme_story_craftsmanship.jpg',
   product_spotlight: '/images/themes/theme_product_spotlight.jpg',
 };
+
+const UNSAFE_PATTERN = /<script|<\/script|javascript:|vbscript:|data:\s*text\/html|onerror\s*=|onload\s*=|onclick\s*=|<\/style|<iframe|<object|<embed/i;
 
 @Injectable()
 export class PageBuilderValidator {
@@ -29,232 +42,179 @@ export class PageBuilderValidator {
     rawText: string,
     storeId: number,
     userPrompt: string,
+    pageType?: PageType,
   ): Promise<PageBlueprint> {
     const rawJson = this.extractJson(rawText);
     if (!rawJson) {
-      this.logger.warn(`Could not extract valid JSON from Qwen response. Fallback to default page structure.`);
-      return this.buildFallbackBlueprint(userPrompt);
+      this.logger.warn(`Could not extract valid JSON from LLM response. Returning minimal fallback.`);
+      return this.buildFallbackBlueprint(userPrompt, pageType);
     }
 
     const pageData = rawJson.page || rawJson;
     const title = this.sanitizeText(pageData.title) || this.deriveTitleFromPrompt(userPrompt);
     const purpose = this.sanitizeText(pageData.purpose) || 'Custom Storefront Page';
     const rawSections = Array.isArray(pageData.sections) ? pageData.sections : [];
+    const resolvedPageType = (this.sanitizeText(pageData.page_type) || pageType || 'custom_page') as PageType;
 
-    // Query store settings / app configs to verify requiresApp rules
-    const whatsappConfig = await this.prisma.whatsapp_config.findUnique({
-      where: { store_id: Number(storeId) },
-      select: { is_connected: true, phone_number: true },
-    }).catch(() => null);
-
-    const isWhatsAppAvailable = Boolean(whatsappConfig?.is_connected && whatsappConfig?.phone_number);
+    // Page-type-aware allowed sections (tier 1 capability enforcement)
+    const allowed = getAllowedSectionsForPageType(resolvedPageType);
 
     const validatedSections: GeneratedSectionInstance[] = [];
 
-    for (let i = 0; i < rawSections.length; i++) {
-      const sec = rawSections[i];
+    for (const sec of rawSections) {
       if (!sec || typeof sec !== 'object') continue;
 
       const type = String(sec.type || '').trim().toLowerCase();
 
-      // Rule: Header, footer, and whatsapp are layout chrome, not body page sections
-      if (type === 'header' || type === 'footer' || type === 'whatsapp') {
+      // Layout chrome is not a body section
+      if (type === 'header' || type === 'footer' || type === 'whatsapp') continue;
+
+      // Capability enforcement: drop sections not allowed for this page type
+      if (allowed !== 'any' && !allowed.includes(type)) {
+        this.logger.warn(`Skipping section type "${type}" — not allowed for page type "${resolvedPageType}".`);
         continue;
       }
 
       const def: SectionDefinition | undefined = THEME_SECTION_REGISTRY[type];
-
-      // Rule: Section type must exist in the section registry
       if (!def) {
         this.logger.warn(`Skipping unsupported section type: "${type}"`);
         continue;
       }
 
-      // Rule: Gated app sections check
-      if (def.requiresApp === 'whatsapp' && !isWhatsAppAvailable) {
-        // WhatsApp is allowed and included so merchant can configure phone in editor
-      }
-
       const settings = this.validateSectionSettings(sec.settings || {}, def, type);
       const blocks = this.validateSectionBlocks(sec.blocks, def);
+      const layout = this.sanitizeLayout(sec.layout);
+
+      // Validate any merchant-bound resource IDs against the store
+      await validateStoreResources(this.prisma, storeId, settings);
 
       const sectionInstance: GeneratedSectionInstance = {
-        id: `${type}_${randomUUID().slice(0, 8)}`,
+        id: String(sec.id || `${type}_${randomUUID().slice(0, 8)}`),
         type,
-        title: def.label,
+        title: this.sanitizeText(sec.title) || def.label,
         settings,
         blocks,
       };
+      if (typeof sec.hidden === 'boolean') sectionInstance.hidden = sec.hidden;
+      if (this.sanitizeStyle(sec.style)) sectionInstance.style = this.sanitizeStyle(sec.style)!;
+      if (layout) sectionInstance.layout = layout;
 
       validatedSections.push(sectionInstance);
     }
 
-    // If no valid sections were generated, return complete 7+ section baseline
     if (validatedSections.length === 0) {
-      return this.buildFallbackBlueprint(userPrompt);
+      return this.buildFallbackBlueprint(userPrompt, resolvedPageType);
     }
 
-    // Ensure at least 7 sections by supplementing missing storefront layers
-    const finalSections = this.ensureMinimumSevenSections(validatedSections, userPrompt);
-
-    return {
+    const blueprint: PageBlueprint = {
+      version: this.sanitizeText(pageData.version) || '2.0',
+      page_type: resolvedPageType,
       title,
       purpose,
-      sections: finalSections,
+      sections: validatedSections,
     };
+
+    const description = this.sanitizeText(pageData.description);
+    if (description) blueprint.description = description;
+    const slug = this.sanitizeText(pageData.slug);
+    if (slug) blueprint.slug = slug.replace(/[^a-z0-9-_]/gi, '-').toLowerCase();
+    if (pageData.seo && typeof pageData.seo === 'object') {
+      blueprint.seo = {
+        title: this.sanitizeText(pageData.seo.title) || undefined,
+        description: this.sanitizeText(pageData.seo.description) || undefined,
+        og_image: this.sanitizeText(pageData.seo.og_image) || undefined,
+      };
+    }
+    if (pageData.settings && typeof pageData.settings === 'object') {
+      blueprint.settings = {
+        theme_preset: this.sanitizeText(pageData.settings.theme_preset) || undefined,
+        primary_font: this.sanitizeText(pageData.settings.primary_font) || undefined,
+        body_font: this.sanitizeText(pageData.settings.body_font) || undefined,
+        bg_color: this.sanitizeColor(pageData.settings.bg_color),
+        text_color: this.sanitizeColor(pageData.settings.text_color),
+        accent_color: this.sanitizeColor(pageData.settings.accent_color),
+      };
+    }
+
+    // Final Zod validation against the universal page blueprint schema
+    const result = UniversalPageBlueprintSchema.safeParse(blueprint);
+    if (!result.success) {
+      this.logger.warn(`Universal page blueprint failed Zod validation, returning sanitized fallback.`);
+      return this.buildFallbackBlueprint(userPrompt, resolvedPageType);
+    }
+
+    return result.data as PageBlueprint;
   }
 
-  private ensureMinimumSevenSections(
-    sections: GeneratedSectionInstance[],
-    userPrompt: string,
-  ): GeneratedSectionInstance[] {
-    const types = new Set(sections.map((s) => s.type));
+  private sanitizeStyle(style: unknown): Record<string, Record<string, string | number>> | undefined {
+    if (!style || typeof style !== 'object' || Array.isArray(style)) return undefined;
+    const out: Record<string, Record<string, string | number>> = {};
+    for (const [bp, map] of Object.entries(style as Record<string, unknown>)) {
+      if (!['desktop', 'tablet', 'mobile', 'hover', 'active'].includes(bp)) continue;
+      if (!map || typeof map !== 'object' || Array.isArray(map)) continue;
+      const inner: Record<string, string | number> = {};
+      for (const [k, v] of Object.entries(map as Record<string, unknown>)) {
+        if (!ALLOWED_STYLE_PROPERTIES.has(k)) continue;
+        if (typeof v === 'number' && Number.isFinite(v)) inner[k] = v;
+        else if (typeof v === 'string' && v.length < 500) inner[k] = v;
+      }
+      if (Object.keys(inner).length) out[bp] = inner;
+    }
+    return Object.keys(out).length ? out : undefined;
+  }
 
-    const isHero = (t: string) =>
-      ['hero', 'ecommerce_hero', 'split_hero', 'video_hero', 'slider_hero', 'minimal_hero', 'frame_scroll_hero'].includes(t);
-    const isDiscovery = (t: string) => ['collection_list', 'instagram_stories'].includes(t);
-    const isProducts = (t: string) => ['featured_products', 'featured_collection', 'featured_product', 'collection_products'].includes(t);
-    const isPromoStory = (t: string) => ['image_banner', 'image_with_text', 'rich_text', 'video', 'model_3d', 'countdown'].includes(t);
-    const isSocialProof = (t: string) => ['testimonials', 'product_reviews'].includes(t);
-    const isFaq = (t: string) => t === 'faq';
-    const isConversion = (t: string) => ['newsletter', 'contact_form'].includes(t);
+  private sanitizeLayout(node: unknown): any {
+    if (!node || typeof node !== 'object' || Array.isArray(node)) return undefined;
+    const raw = node as Record<string, unknown>;
+    const type = normalizeComponentType(raw.type);
+    if (!type) return undefined;
 
-    const result = [...sections];
-
-    // Layer 1: Hero
-    if (!result.some((s) => isHero(s.type))) {
-      result.unshift({
-        id: `hero_${randomUUID().slice(0, 8)}`,
-        type: 'hero',
-        title: 'Hero Banner',
-        settings: {
-          hero_theme: 'luxury',
-          hero_layout: 'overlay',
-          bg_image: THEME_DEFAULT_IMAGES.hero,
-          title: this.deriveTitleFromPrompt(userPrompt),
-          subtitle: 'Discover our new signature releases and curated essentials.',
-          button_text: 'Explore Shop',
-          button_link: '/collections',
-        },
-        blocks: [],
-      });
+    const clean: Record<string, unknown> = { type };
+    if (typeof raw.id === 'string' && raw.id.trim()) clean.id = raw.id.trim().slice(0, 80);
+    if (typeof raw.name === 'string' && raw.name.trim()) clean.name = raw.name.trim().slice(0, 80);
+    if (typeof raw.condition === 'string' && raw.condition.trim().length < 500 && !UNSAFE_PATTERN.test(raw.condition)) {
+      clean.condition = raw.condition.trim();
     }
 
-    // Layer 2: Discovery / Collections
-    if (result.length < 7 && !result.some((s) => isDiscovery(s.type))) {
-      const heroIdx = result.findIndex((s) => isHero(s.type));
-      result.splice(heroIdx + 1, 0, {
-        id: `collection_list_${randomUUID().slice(0, 8)}`,
-        type: 'collection_list',
-        title: 'Collection List',
-        settings: { title: 'Browse by Collection' },
-        blocks: [],
-      });
+    const style = this.sanitizeStyle(raw.style);
+    if (style) clean.style = style;
+
+    const allowed = new Set(ALLOWED_PROPS[type]);
+    const props: Record<string, unknown> = {};
+    if (raw.props && typeof raw.props === 'object' && !Array.isArray(raw.props)) {
+      for (const [k, v] of Object.entries(raw.props as Record<string, unknown>)) {
+        if (!allowed.has(k)) continue;
+        if (typeof v === 'string') props[k] = this.sanitizeText(v);
+        else if (typeof v === 'number' || typeof v === 'boolean') props[k] = v;
+      }
+    }
+    if (Object.keys(props).length) clean.props = props;
+
+    if (raw.bindings && typeof raw.bindings === 'object' && !Array.isArray(raw.bindings)) {
+      const bindings: Record<string, string> = {};
+      for (const [k, v] of Object.entries(raw.bindings as Record<string, unknown>)) {
+        if (!allowed.has(k) || typeof v !== 'string' || v.length > 500) continue;
+        bindings[k] = this.sanitizeText(v);
+      }
+      if (Object.keys(bindings).length) clean.bindings = bindings;
     }
 
-    // Layer 3: Main Products
-    if (result.length < 7 && !result.some((s) => isProducts(s.type))) {
-      result.splice(2, 0, {
-        id: `featured_products_${randomUUID().slice(0, 8)}`,
-        type: 'featured_products',
-        title: 'Featured Products',
-        settings: { title: 'Trending Best-Sellers', subtitle: 'Our most popular customer favorites' },
-        blocks: [],
-      });
+    if (raw.repeater && typeof raw.repeater === 'object' && !Array.isArray(raw.repeater)) {
+      const r = raw.repeater as Record<string, unknown>;
+      const repeater: Record<string, unknown> = {};
+      if (typeof r.itemsSource === 'string' && r.itemsSource.trim().length < 300) repeater.itemsSource = r.itemsSource.trim();
+      if (typeof r.itemAlias === 'string' && /^[A-Za-z][A-Za-z0-9_]*$/.test(r.itemAlias)) repeater.itemAlias = r.itemAlias;
+      if (typeof r.indexAlias === 'string' && /^[A-Za-z][A-Za-z0-9_]*$/.test(r.indexAlias)) repeater.indexAlias = r.indexAlias;
+      if (typeof r.limit === 'number' && r.limit >= 1 && r.limit <= 100) repeater.limit = Math.floor(r.limit);
+      if (repeater.itemsSource && repeater.itemAlias) clean.repeater = repeater;
     }
 
-    // Layer 4: Brand Promo / Story
-    if (result.length < 7 && !result.some((s) => isPromoStory(s.type))) {
-      result.push({
-        id: `image_banner_${randomUUID().slice(0, 8)}`,
-        type: 'image_banner',
-        title: 'Image Banner',
-        settings: {
-          heading: 'Exclusive Seasonal Offer',
-          subheading: 'Limited Time Online',
-          image: THEME_DEFAULT_IMAGES.image_banner,
-          button_text: 'Shop Collection',
-          button_link: '/collections',
-        },
-        blocks: [],
-      });
+    if (Array.isArray(raw.children)) {
+      const children = raw.children.map((c) => this.sanitizeLayout(c)).filter(Boolean);
+      if (children.length) clean.children = children;
     }
 
-    // Layer 5: Storytelling with Text
-    if (result.length < 7 && !types.has('image_with_text')) {
-      result.push({
-        id: `image_with_text_${randomUUID().slice(0, 8)}`,
-        type: 'image_with_text',
-        title: 'Image with Text',
-        settings: {
-          heading: 'Crafted with Integrity',
-          subheading: 'Our Story',
-          image: THEME_DEFAULT_IMAGES.image_with_text,
-          content: '<p>Every item is designed with meticulous attention to detail and sustainable materials.</p>',
-          button_text: 'Learn More',
-        },
-        blocks: [],
-      });
-    }
-
-    // Layer 6: Testimonials
-    if (result.length < 7 && !result.some((s) => isSocialProof(s.type))) {
-      result.push({
-        id: `testimonials_${randomUUID().slice(0, 8)}`,
-        type: 'testimonials',
-        title: 'Testimonials',
-        settings: { title: 'Loved by Customers Worldwide' },
-        blocks: [
-          {
-            id: randomUUID().slice(0, 8),
-            type: 'testimonial',
-            settings: {
-              author_name: 'Elena R.',
-              author_role: 'Verified Buyer',
-              quote: '<p>Exceptional craftsmanship, luxurious packaging, and ultra-fast delivery!</p>',
-              rating: '5',
-            },
-          },
-        ],
-      });
-    }
-
-    // Layer 7: FAQ
-    if (result.length < 7 && !result.some((s) => isFaq(s.type))) {
-      result.push({
-        id: `faq_${randomUUID().slice(0, 8)}`,
-        type: 'faq',
-        title: 'FAQ',
-        settings: { title: 'Frequently Asked Questions' },
-        blocks: [
-          {
-            id: randomUUID().slice(0, 8),
-            type: 'faq_item',
-            settings: {
-              q: 'How long does shipping take?',
-              a: '<p>Orders typically arrive within 2-4 business days with tracking provided.</p>',
-            },
-          },
-        ],
-      });
-    }
-
-    // Layer 8: Newsletter
-    if (result.length < 7 && !result.some((s) => isConversion(s.type))) {
-      result.push({
-        id: `newsletter_${randomUUID().slice(0, 8)}`,
-        type: 'newsletter',
-        title: 'Newsletter Signup',
-        settings: {
-          heading: 'Join Our Community',
-          subheading: 'Sign up to receive 15% off your next purchase and exclusive early access.',
-          button_text: 'Subscribe',
-        },
-        blocks: [],
-      });
-    }
-
-    return result;
+    return clean;
   }
 
   private validateSectionSettings(
@@ -420,17 +380,14 @@ export class PageBuilderValidator {
 
     let text = rawText.trim();
 
-    // 1. Strip markdown code block fences if present
     text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
 
-    // 2. Try direct JSON parse
     try {
       return JSON.parse(text);
     } catch {
       // Continue to pattern extraction
     }
 
-    // 3. Match innermost/outermost json object block
     const firstBrace = text.indexOf('{');
     const lastBrace = text.lastIndexOf('}');
 
@@ -439,7 +396,6 @@ export class PageBuilderValidator {
       try {
         return JSON.parse(candidate);
       } catch {
-        // Try fixing unclosed trailing commas
         const cleaned = candidate.replace(/,\s*([\]}])/g, '$1');
         try {
           return JSON.parse(cleaned);
@@ -454,13 +410,19 @@ export class PageBuilderValidator {
 
   private sanitizeText(val?: string | null): string {
     if (!val || typeof val !== 'string') return '';
-    // Strip malicious script injection and protocol handlers
     return val
       .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
       .replace(/javascript:/gi, '')
       .replace(/onerror\s*=/gi, '')
       .replace(/onload\s*=/gi, '')
       .trim();
+  }
+
+  private sanitizeColor(val?: unknown): string | undefined {
+    if (typeof val !== 'string') return undefined;
+    const str = val.trim();
+    if (/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(str) || /^rgba?\(.+?\)$/i.test(str)) return str;
+    return undefined;
   }
 
   private deriveTitleFromPrompt(prompt: string): string {
@@ -470,10 +432,12 @@ export class PageBuilderValidator {
     return words.join(' ');
   }
 
-  private buildFallbackBlueprint(userPrompt: string): PageBlueprint {
+  private buildFallbackBlueprint(userPrompt: string, pageType?: PageType): PageBlueprint {
     return {
+      version: '2.0',
+      page_type: pageType || 'homepage',
       title: this.deriveTitleFromPrompt(userPrompt),
-      purpose: 'Storefront Homepage',
+      purpose: 'Custom Storefront Page',
       sections: [
         {
           id: `hero_${randomUUID().slice(0, 8)}`,
@@ -492,17 +456,6 @@ export class PageBuilderValidator {
           blocks: [],
         },
         {
-          id: `collection_list_${randomUUID().slice(0, 8)}`,
-          type: 'collection_list',
-          title: 'Collection List',
-          settings: {
-            title: 'Shop by Category',
-            columns_desktop: '3',
-            card_style: 'overlay',
-          },
-          blocks: [],
-        },
-        {
           id: `featured_products_${randomUUID().slice(0, 8)}`,
           type: 'featured_products',
           title: 'Featured Products',
@@ -511,84 +464,9 @@ export class PageBuilderValidator {
             subtitle: 'Our most coveted pieces this season',
             limit: '4',
             columns_desktop: '4',
-            columns_mobile: '2',
             show_price: 'true',
-            show_quick_view: 'true',
           },
           blocks: [],
-        },
-        {
-          id: `image_banner_${randomUUID().slice(0, 8)}`,
-          type: 'image_banner',
-          title: 'Image Banner',
-          settings: {
-            heading: 'Limited Season Offer',
-            subheading: 'Up to 40% off online & in-store',
-            image: THEME_DEFAULT_IMAGES.image_banner,
-            button_text: 'Claim Discount',
-            button_link: '/collections',
-          },
-          blocks: [],
-        },
-        {
-          id: `image_with_text_${randomUUID().slice(0, 8)}`,
-          type: 'image_with_text',
-          title: 'Image with Text',
-          settings: {
-            heading: 'Crafted with Purpose',
-            subheading: 'Our Heritage',
-            image: THEME_DEFAULT_IMAGES.image_with_text,
-            content: '<p>Every product in our catalog is crafted using premium, sustainable materials designed to stand the test of time.</p>',
-            button_text: 'Read Our Story',
-          },
-          blocks: [],
-        },
-        {
-          id: `testimonials_${randomUUID().slice(0, 8)}`,
-          type: 'testimonials',
-          title: 'Testimonials',
-          settings: {
-            title: 'Loved by Over 50,000+ Customers',
-            layout: 'slider',
-          },
-          blocks: [
-            {
-              id: randomUUID().slice(0, 8),
-              type: 'testimonial',
-              settings: {
-                author_name: 'Elena R.',
-                author_role: 'Verified Buyer',
-                quote: '<p>Exceptional quality, luxurious finish, and incredibly prompt customer support!</p>',
-                rating: '5',
-              },
-            },
-          ],
-        },
-        {
-          id: `faq_${randomUUID().slice(0, 8)}`,
-          type: 'faq',
-          title: 'FAQ',
-          settings: {
-            title: 'Frequently Asked Questions',
-          },
-          blocks: [
-            {
-              id: randomUUID().slice(0, 8),
-              type: 'faq_item',
-              settings: {
-                q: 'What is your shipping policy?',
-                a: '<p>We offer standard 3-5 business day delivery and expedited options at checkout.</p>',
-              },
-            },
-            {
-              id: randomUUID().slice(0, 8),
-              type: 'faq_item',
-              settings: {
-                q: 'What is your return policy?',
-                a: '<p>We provide a 30-day hassle-free return policy for all unused items in original packaging.</p>',
-              },
-            },
-          ],
         },
         {
           id: `newsletter_${randomUUID().slice(0, 8)}`,
@@ -596,7 +474,7 @@ export class PageBuilderValidator {
           title: 'Newsletter Signup',
           settings: {
             heading: 'Join Our Community',
-            subheading: 'Receive 15% off your first purchase and exclusive early access to new releases.',
+            subheading: 'Receive 15% off your first purchase.',
             button_text: 'Subscribe',
           },
           blocks: [],

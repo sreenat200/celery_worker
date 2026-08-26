@@ -6,11 +6,21 @@ import {
   PAGE_BUILDER_JOB,
   type PageBuilderJobData,
   type PageBuilderResult,
+  type PageBlueprint,
 } from '../jobs/bullmq.constants';
-import { AzureQwenService } from './azure-qwen.service';
+import { DeepSeekService } from './deepseek.service';
 import { PageBuilderValidator } from './page-builder-validator.service';
 import { getSectionSchemaPromptContext } from './theme-sections.schema';
+import {
+  derivePageType,
+  getAllowedSectionsForPageType,
+  type PageType,
+} from './page-capability-registry';
 import { heapMb } from '../lib/sharp-limits';
+
+const SYSTEM_PROMPT = `You are an expert e-commerce storefront architect and universal page builder.
+You design composable storefront pages from natural language. You always output ONLY valid JSON
+matching the requested schema. You never output markdown, code fences, or commentary.`;
 
 function out(msg: string) {
   process.stdout.write(`${new Date().toISOString()} [page-builder-worker] ${msg}\n`);
@@ -23,7 +33,7 @@ export class PageBuilderRunner implements OnModuleInit, OnModuleDestroy {
   private worker: Worker | null = null;
 
   constructor(
-    private readonly azureQwen: AzureQwenService,
+    private readonly deepSeek: DeepSeekService,
     private readonly validator: PageBuilderValidator,
   ) {}
 
@@ -76,87 +86,192 @@ export class PageBuilderRunner implements OnModuleInit, OnModuleDestroy {
   private async dispatch(job: Job): Promise<PageBuilderResult> {
     switch (job.name) {
       case PAGE_BUILDER_JOB.GENERATE_PAGE_BLUEPRINT:
-        return this.handleGenerateBlueprint(job.data as PageBuilderJobData);
-
+        return this.handleGenerateBlueprint(job);
+      case PAGE_BUILDER_JOB.REFINE_PAGE_BLUEPRINT:
+        return this.handleRefineBlueprint(job);
       default:
         throw new Error(`Unknown job name on page-builder queue: ${job.name}`);
     }
   }
 
-  private async handleGenerateBlueprint(data: PageBuilderJobData): Promise<PageBuilderResult> {
-    const { storeId, userPrompt } = data;
+  private setProgress(job: Job, value: number) {
+    const clamped = Math.max(0, Math.min(100, Math.round(value)));
+    return job.updateProgress(clamped).catch(() => undefined);
+  }
+
+  private async handleGenerateBlueprint(job: Job): Promise<PageBuilderResult> {
+    const { storeId, userPrompt } = job.data as PageBuilderJobData;
 
     if (!userPrompt || userPrompt.trim().length === 0) {
       throw new Error('User prompt is required to generate a page blueprint.');
     }
 
+    await this.setProgress(job, 25);
+
+    const pageType: PageType = derivePageType(userPrompt);
+    const allowed = getAllowedSectionsForPageType(pageType);
     const sectionsRegistryJson = getSectionSchemaPromptContext();
-    const prompt = this.buildPageBuilderPrompt(userPrompt, sectionsRegistryJson);
+    const prompt = this.buildPageBuilderPrompt(userPrompt, sectionsRegistryJson, pageType, allowed);
 
     let rawResponse: string;
     try {
-      const maxTokens = parseInt(process.env.AZURE_MAX_TOKENS || '800', 10) || 800;
-      rawResponse = await this.azureQwen.generateText(prompt, maxTokens);
+      const defaultMax = 8192;
+      const maxTokens = Math.max(4096, parseInt(process.env.PAGE_BUILDER_MAX_TOKENS || process.env.DEEPSEEK_MAX_TOKENS || String(defaultMax), 10) || defaultMax);
+      rawResponse = await this.deepSeek.generateChat(
+        [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: prompt },
+        ],
+        { maxTokens, jsonMode: true, temperature: 0.2, disableThinking: true },
+      );
     } catch (err: any) {
-      this.logger.error(`Azure Qwen inference error during page building: ${err.message}`);
+      this.logger.error(`DeepSeek inference error during page building: ${err.message}`);
       throw err;
     }
+
+    await this.setProgress(job, 60);
 
     const blueprint = await this.validator.validateAndFormatBlueprint(
       rawResponse,
       Number(storeId),
       userPrompt,
+      pageType,
     );
+
+    await this.setProgress(job, 100);
 
     return {
       blueprint,
+      pageType,
     };
   }
 
-  private buildPageBuilderPrompt(userPrompt: string, sectionsJson: string): string {
-    return `You are an expert e-commerce storefront architect and page builder engine.
-Analyze the merchant's request and construct a comprehensive, high-converting storefront page layout with AT LEAST 7 sections.
+  private async handleRefineBlueprint(job: Job): Promise<PageBuilderResult> {
+    const { storeId, userPrompt, followUpPrompt, currentBlueprint } = job.data as PageBuilderJobData;
+
+    if (!followUpPrompt || followUpPrompt.trim().length === 0) {
+      throw new Error('Refinement prompt is required.');
+    }
+
+    await this.setProgress(job, 25);
+
+    const pageType: PageType =
+      (currentBlueprint?.page_type as PageType) || derivePageType(String(userPrompt || followUpPrompt));
+    const allowed = getAllowedSectionsForPageType(pageType);
+    const sectionsRegistryJson = getSectionSchemaPromptContext();
+    const prompt = this.buildRefinePrompt(
+      String(userPrompt || ''),
+      followUpPrompt,
+      currentBlueprint || null,
+      sectionsRegistryJson,
+      pageType,
+      allowed,
+    );
+
+    let rawResponse: string;
+    try {
+      const maxTokens = Math.max(4096, parseInt(process.env.PAGE_BUILDER_MAX_TOKENS || process.env.DEEPSEEK_MAX_TOKENS || '8192', 10) || 8192);
+      rawResponse = await this.deepSeek.generateChat(
+        [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: prompt },
+        ],
+        { maxTokens, jsonMode: true, temperature: 0.2, disableThinking: true },
+      );
+    } catch (err: any) {
+      this.logger.error(`DeepSeek inference error during page refinement: ${err.message}`);
+      throw err;
+    }
+
+    await this.setProgress(job, 60);
+
+    const blueprint = await this.validator.validateAndFormatBlueprint(
+      rawResponse,
+      Number(storeId),
+      String(userPrompt || followUpPrompt),
+      pageType,
+    );
+
+    await this.setProgress(job, 100);
+
+    return { blueprint, pageType };
+  }
+
+  private buildPageBuilderPrompt(
+    userPrompt: string,
+    sectionsJson: string,
+    pageType: PageType,
+    allowed: string[] | 'any',
+  ): string {
+    const allowedBlock =
+      allowed === 'any'
+        ? 'You may use any registered section type.'
+        : `Allowed sections for a "${pageType}" page (use ONLY these):\n${allowed.join(', ')}`;
+
+    return `You are an expert e-commerce storefront architect and universal page builder.
+Analyze the merchant's request and construct a high-converting storefront page as a composable blueprint.
 
 Merchant Request:
 "${userPrompt}"
 
+Detected page type: ${pageType}
+
+${allowedBlock}
+
 Available Section Types & Settings:
 ${sectionsJson}
 
-Storefront Hierarchy & Section Ordering Rules:
-You MUST generate AT LEAST 7 relevant sections arranged in this exact high-converting storefront order:
-1. Header Banner / Hero: (hero, ecommerce_hero, split_hero, video_hero, slider_hero, minimal_hero, or frame_scroll_hero)
-2. Discovery / Categories / Stories: (collection_list or instagram_stories)
-3. Main Products Showcase: (featured_products or featured_collection)
-4. Spotlight / Promotion / Deals: (featured_product, image_banner, or countdown)
-5. Brand Storytelling / Features: (image_with_text, rich_text, video, or model_3d)
-6. Trust & Social Proof: (testimonials, product_reviews, or faq)
-7. Final CTA / Customer Engagement: (newsletter or contact_form)
-
-Section Output Rules:
-- Generate 7 to 9 sections strictly following the ordering rules above.
-- Tailor all headings, subheadings, and button copy specifically to the merchant's request.
+Composition Rules:
+- Choose the RIGHT number of sections for this request (typically 3 to 10). Do NOT force a fixed count.
+- Order sections in a natural high-converting flow. No fixed 7-layer sequence is required.
+- Tailor every heading, subtitle, and button to the merchant's request.
 - Use only valid section types and settings from the Available Sections schema.
-- Output ONLY valid JSON matching the structure below without commentary.
+- Prefer composable, reusable sections and avoid redundant near-duplicate sections.
+- Do not invent product/collection IDs; leave resource pickers empty.
 
-JSON Format:
+JSON Format (universal page blueprint v2.0):
 {
-  "page": {
-    "title": "Storefront Home",
-    "purpose": "High-converting homepage",
-    "sections": [
-      { "id": "hero_1", "type": "hero", "settings": { "title": "Elevate Your Style", "subtitle": "Curated premium fashion releases", "hero_theme": "luxury", "hero_layout": "overlay", "bg_image": "/images/themes/theme_hero_luxury_banner.jpg", "button_text": "Shop Collection", "button_link": "/collections" }, "blocks": [] },
-      { "id": "collection_list_1", "type": "collection_list", "settings": { "title": "Shop by Category" }, "blocks": [] },
-      { "id": "featured_products_1", "type": "featured_products", "settings": { "title": "Trending Best-Sellers", "subtitle": "Our most coveted pieces" }, "blocks": [] },
-      { "id": "image_banner_1", "type": "image_banner", "settings": { "heading": "Limited Season Offer", "subheading": "Up to 40% off online", "image": "/images/themes/theme_promo_banner.jpg", "button_text": "Claim Discount", "button_link": "/collections" }, "blocks": [] },
-      { "id": "image_with_text_1", "type": "image_with_text", "settings": { "heading": "Crafted with Purpose", "image": "/images/themes/theme_story_craftsmanship.jpg", "content": "<p>We source only the finest sustainable materials.</p>", "button_text": "Learn More" }, "blocks": [] },
-      { "id": "testimonials_1", "type": "testimonials", "settings": { "title": "Loved by Over 50,000+ Customers" }, "blocks": [{ "id": "t1", "type": "testimonial", "settings": { "author_name": "Sarah K.", "author_role": "Verified Customer", "quote": "<p>Incredible quality and fast delivery!</p>", "rating": "5" } }] },
-      { "id": "faq_1", "type": "faq", "settings": { "title": "Frequently Asked Questions" }, "blocks": [{ "id": "f1", "type": "faq_item", "settings": { "q": "What is the return policy?", "a": "<p>We offer 30-day hassle-free returns.</p>" } }] },
-      { "id": "newsletter_1", "type": "newsletter", "settings": { "heading": "Join the Inner Circle", "subheading": "Get 15% off your first purchase.", "button_text": "Subscribe" }, "blocks": [] }
-    ]
-  }
+  "version": "2.0",
+  "page_type": "${pageType}",
+  "title": "Meaningful page title",
+  "slug": "url-handle",
+  "description": "short summary",
+  "seo": { "title": "SEO title", "description": "SEO meta description", "og_image": "" },
+  "settings": { "theme_preset": "luxury_dark", "primary_font": "Inter", "body_font": "Inter", "bg_color": "#FFFFFF", "text_color": "#0F172A", "accent_color": "#F59E0B" },
+  "sections": [
+    { "id": "hero_1", "type": "hero", "title": "Hero", "hidden": false, "settings": { "title": "Elevate Your Style", "subtitle": "Curated premium fashion", "button_text": "Shop Now", "button_link": "/collections" }, "blocks": [] }
+  ]
 }
 
-JSON Response:`;
+Output ONLY valid JSON. No markdown. No commentary.`;
+  }
+
+  private buildRefinePrompt(
+    userPrompt: string,
+    followUp: string,
+    current: PageBlueprint | null,
+    sectionsJson: string,
+    pageType: PageType,
+    allowed: string[] | 'any',
+  ): string {
+    const allowedBlock =
+      allowed === 'any'
+        ? 'You may use any registered section type.'
+        : `Allowed sections for a "${pageType}" page (use ONLY these):\n${allowed.join(', ')}`;
+
+    return `You are an expert e-commerce storefront architect refining an existing page blueprint.
+
+Original request: "${userPrompt}"
+Refinement request: "${followUp}"
+
+${allowedBlock}
+
+Available Section Types & Settings:
+${sectionsJson}
+
+Current blueprint (edit this — preserve unrelated sections and settings):
+${current ? JSON.stringify(current) : '{}'}
+
+Return the FULL updated page blueprint as valid JSON (same v2.0 shape). Only change what the refinement requests. Do not invent product/collection IDs. Output ONLY valid JSON, no commentary.`;
   }
 }

@@ -734,6 +734,7 @@ model store {
   whatsapp_config        whatsapp_config?
   wishlist_item          wishlist_item[]
   ai_custom_section      ai_custom_section[]
+  page_blueprint         page_blueprint[]
 }
 
 model store_notification {
@@ -1248,6 +1249,39 @@ model app_extension {
   @@index([store_id, point])
 }
 
+model page_blueprint {
+  id                Int       @id @default(autoincrement())
+  store_id          Int
+  theme_id          Int?
+  page_type         String    @db.VarChar(50)
+  title             String    @db.VarChar(255)
+  slug              String?   @db.VarChar(255)
+  description       String?   @db.Text
+  blueprint_json    Json
+  is_published      Boolean   @default(false)
+  version           Int       @default(1)
+  generation_job_id String?   @unique @db.VarChar(120)
+  created_by        Int?
+  created_at        DateTime? @default(now()) @db.Timestamp(6)
+  updated_at        DateTime? @default(now()) @db.Timestamp(6)
+  store             store     @relation(fields: [store_id], references: [id], onDelete: Cascade)
+  versions          page_blueprint_version[]
+
+  @@index([store_id])
+}
+
+model page_blueprint_version {
+  id             Int            @id @default(autoincrement())
+  page_id        Int
+  version_number Int
+  blueprint_json Json
+  created_by     Int?
+  created_at     DateTime?      @default(now()) @db.Timestamp(6)
+  page           page_blueprint @relation(fields: [page_id], references: [id], onDelete: Cascade)
+
+  @@index([page_id])
+}
+
 model ai_custom_section {
   id                Int       @id @default(autoincrement())
   store_id          Int
@@ -1257,6 +1291,7 @@ model ai_custom_section {
   prompt            String    @db.Text
   blueprint         Json?
   status            String    @default("generating") @db.VarChar(50)
+  progress          Int       @default(0)
   generation_job_id String?   @db.VarChar(100)
   model_name        String?   @db.VarChar(50)
   error_code        String?   @db.VarChar(50)

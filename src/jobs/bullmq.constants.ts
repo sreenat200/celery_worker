@@ -26,6 +26,7 @@ export const AI_JOB = {
 
 export const PAGE_BUILDER_JOB = {
   GENERATE_PAGE_BLUEPRINT: 'generate-page-blueprint',
+  REFINE_PAGE_BLUEPRINT: 'refine-page-blueprint',
 } as const;
 
 export interface PageBuilderJobData {
@@ -35,6 +36,8 @@ export interface PageBuilderJobData {
   userPrompt: string;
   themeId?: string | number | null;
   requestId?: string | null;
+  followUpPrompt?: string;
+  currentBlueprint?: PageBlueprint | null;
 }
 
 export interface GeneratedSectionBlock {
@@ -47,18 +50,44 @@ export interface GeneratedSectionInstance {
   id: string;
   type: string;
   title?: string;
+  hidden?: boolean;
+  style?: Record<string, any>;
   settings: Record<string, any>;
+  layout?: any;
   blocks?: GeneratedSectionBlock[];
 }
 
+export interface PageSeo {
+  title?: string;
+  description?: string;
+  og_image?: string;
+}
+
+export interface PageSettings {
+  theme_preset?: string;
+  primary_font?: string;
+  body_font?: string;
+  bg_color?: string;
+  text_color?: string;
+  accent_color?: string;
+}
+
 export interface PageBlueprint {
+  version?: string;
+  id?: string;
+  page_type?: string;
   title: string;
-  purpose: string;
+  slug?: string;
+  purpose?: string;
+  description?: string;
+  seo?: PageSeo;
+  settings?: PageSettings;
   sections: GeneratedSectionInstance[];
 }
 
 export interface PageBuilderResult {
   blueprint: PageBlueprint;
+  pageType?: string;
 }
 
 export interface ProductDataPayload {

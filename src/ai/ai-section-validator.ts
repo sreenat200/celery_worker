@@ -31,6 +31,9 @@ export class AiSectionValidationError extends Error {
 
 export interface ValidatedBlueprint {
   name: string;
+  version?: string;
+  category?: 'hero' | 'commerce' | 'content' | 'social' | 'promotional' | 'custom';
+  description?: string;
   schema: Record<string, any>;
   defaultSettings: Record<string, any>;
   layout: any;
@@ -307,9 +310,13 @@ function sanitizeNode(raw: unknown, depth: number, counter: { nodes: number }): 
   const desktop = sanitizeStyleMap(styleIn.desktop);
   const tablet = sanitizeStyleMap(styleIn.tablet);
   const mobile = sanitizeStyleMap(styleIn.mobile);
+  const hover = sanitizeStyleMap(styleIn.hover);
+  const active = sanitizeStyleMap(styleIn.active);
   if (desktop) style.desktop = desktop;
   if (tablet) style.tablet = tablet;
   if (mobile) style.mobile = mobile;
+  if (hover) style.hover = hover;
+  if (active) style.active = active;
 
   let children: any[] | undefined;
   if (LEAF_COMPONENT_TYPES.has(type)) {
@@ -323,6 +330,11 @@ function sanitizeNode(raw: unknown, depth: number, counter: { nodes: number }): 
 
   const clean: Record<string, unknown> = { type };
   if (typeof node.id === 'string' && node.id.trim()) clean.id = node.id.trim().slice(0, 80);
+  if (typeof node.name === 'string' && node.name.trim()) clean.name = node.name.trim().slice(0, 80);
+  if (typeof node.condition === 'string' && node.condition.trim().length < 500) {
+    const cond = node.condition.trim();
+    if (!UNSAFE_CONTENT_PATTERN.test(cond)) clean.condition = cond;
+  }
   if (Object.keys(style).length) clean.style = style;
   if (Object.keys(props).length) clean.props = props;
   if (children && children.length) clean.children = children;
@@ -333,6 +345,50 @@ function sanitizeNode(raw: unknown, depth: number, counter: { nodes: number }): 
     if (typeof b.id === 'string') binding.id = b.id;
     if (Array.isArray(b.ids)) binding.ids = b.ids.filter((x) => typeof x === 'string').slice(0, 24);
     if (Object.keys(binding).length) clean.binding = binding;
+  }
+  if (node.bindings && typeof node.bindings === 'object' && !Array.isArray(node.bindings)) {
+    const bindings: Record<string, string> = {};
+    for (const [key, value] of Object.entries(node.bindings as Record<string, unknown>)) {
+      if (!allowed.has(key)) continue;
+      if (typeof value !== 'string') continue;
+      const cleaned = sanitizeUrlLike(value);
+      if (typeof cleaned === 'string' && cleaned.length > 0 && cleaned.length < 500) {
+        bindings[key] = cleaned;
+      }
+    }
+    if (Object.keys(bindings).length) clean.bindings = bindings;
+  }
+  if (node.repeater && typeof node.repeater === 'object' && !Array.isArray(node.repeater)) {
+    const r = node.repeater as Record<string, unknown>;
+    const repeater: Record<string, unknown> = {};
+    if (typeof r.itemsSource === 'string' && r.itemsSource.trim().length > 0 && r.itemsSource.trim().length < 300) {
+      repeater.itemsSource = r.itemsSource.trim();
+    }
+    if (typeof r.itemAlias === 'string' && /^[A-Za-z][A-Za-z0-9_]*$/.test(r.itemAlias)) {
+      repeater.itemAlias = r.itemAlias;
+    }
+    if (typeof r.indexAlias === 'string' && /^[A-Za-z][A-Za-z0-9_]*$/.test(r.indexAlias)) {
+      repeater.indexAlias = r.indexAlias;
+    }
+    if (typeof r.limit === 'number' && Number.isFinite(r.limit) && r.limit >= 1 && r.limit <= 100) {
+      repeater.limit = Math.floor(r.limit);
+    }
+    if (repeater.itemsSource && repeater.itemAlias) clean.repeater = repeater;
+  }
+  if (node.events && typeof node.events === 'object' && !Array.isArray(node.events)) {
+    const e = node.events as Record<string, unknown>;
+    const events: Record<string, unknown> = {};
+    const CLICK_ACTIONS = new Set(['addToCart', 'openModal', 'scrollTo', 'toggleAccordion', 'navigate']);
+    if (typeof e.onClick === 'string' && CLICK_ACTIONS.has(e.onClick)) events.onClick = e.onClick;
+    if (e.payload && typeof e.payload === 'object' && !Array.isArray(e.payload)) {
+      const payload: Record<string, unknown> = {};
+      for (const [pk, pv] of Object.entries(e.payload as Record<string, unknown>)) {
+        if (typeof pv === 'string' && pv.length < 500) payload[pk] = sanitizeUrlLike(pv);
+        else if (typeof pv === 'number' || typeof pv === 'boolean') payload[pk] = pv;
+      }
+      if (Object.keys(payload).length) events.payload = payload;
+    }
+    if (Object.keys(events).length) clean.events = events;
   }
   return clean;
 }
@@ -481,6 +537,17 @@ export function validateAiSectionBlueprint(rawText: string): ValidatedBlueprint 
   });
 
   const candidate = { name, schema, defaultSettings, layout };
+  const categoryValue = source.category;
+  const CATEGORIES = new Set(['hero', 'commerce', 'content', 'social', 'promotional', 'custom']);
+  if (typeof categoryValue === 'string' && CATEGORIES.has(categoryValue)) {
+    (candidate as Record<string, unknown>).category = categoryValue;
+  }
+  if (typeof source.description === 'string' && source.description.trim()) {
+    (candidate as Record<string, unknown>).description = source.description.trim().slice(0, 400);
+  }
+  if (typeof source.version === 'string' && source.version.trim()) {
+    (candidate as Record<string, unknown>).version = source.version.trim().slice(0, 20);
+  }
   assertNoUnsafeContent(candidate);
 
   const result = AiSectionBlueprintSchema.safeParse(candidate);

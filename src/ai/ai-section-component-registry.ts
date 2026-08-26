@@ -51,6 +51,11 @@ export const AI_COMPONENT_TYPES = [
   'shipping',
   'testimonial',
   'testimonial_item',
+  'product_price',
+  'product_badge',
+  'variant_selector',
+  'quantity_selector',
+  'product_gallery',
 ] as const;
 
 export type AiComponentType = (typeof AI_COMPONENT_TYPES)[number];
@@ -127,7 +132,13 @@ export const LEAF_COMPONENT_TYPES = new Set<AiComponentType>([
   'size_guide',
   'whatsapp',
   'shipping',
+  'testimonial',
   'testimonial_item',
+  'product_price',
+  'product_badge',
+  'variant_selector',
+  'quantity_selector',
+  'product_gallery',
 ]);
 
 export const COMPONENT_ALIASES: Record<string, AiComponentType> = {
@@ -231,6 +242,24 @@ export const COMPONENT_ALIASES: Record<string, AiComponentType> = {
   quotes: 'testimonial',
   testimonials: 'testimonial',
   review_card: 'testimonial_item',
+  price: 'product_price',
+  'product-price': 'product_price',
+  saleprice: 'product_price',
+  badge: 'product_badge',
+  'product-badge': 'product_badge',
+  'sale-badge': 'product_badge',
+  variant: 'variant_selector',
+  'variant-selector': 'variant_selector',
+  variants: 'variant_selector',
+  'variant-picker': 'variant_selector',
+  quantity: 'quantity_selector',
+  'quantity-selector': 'quantity_selector',
+  qty_selector: 'quantity_selector',
+  stepper: 'quantity_selector',
+  gallery: 'product_gallery',
+  'product-gallery': 'product_gallery',
+  'image-gallery': 'product_gallery',
+  thumbnails: 'product_gallery',
 };
 
 export const ALLOWED_PROPS: Record<AiComponentType, readonly string[]> = {
@@ -286,6 +315,11 @@ export const ALLOWED_PROPS: Record<AiComponentType, readonly string[]> = {
   shipping: ['heading', 'cod_message', 'button_text'],
   testimonial: ['heading'],
   testimonial_item: ['name', 'quote', 'rating', 'image', 'alt'],
+  product_price: ['product_id', 'compareAt', 'showCompareAt', 'size', 'weight', 'slot'],
+  product_badge: ['product_id', 'text', 'variant', 'tone', 'slot'],
+  variant_selector: ['product_id', 'option', 'layout', 'slot'],
+  quantity_selector: ['product_id', 'min', 'max', 'step', 'slot'],
+  product_gallery: ['product_id', 'layout', 'thumbPosition', 'showThumbs', 'slot'],
 };
 
 export const ALLOWED_STYLE_PROPERTIES = new Set([
@@ -343,6 +377,12 @@ export const ALLOWED_STYLE_PROPERTIES = new Set([
   'borderLeft',
   'boxShadow',
   'opacity',
+  'transform',
+  'transition',
+  'transitionDuration',
+  'transitionTimingFunction',
+  'transitionDelay',
+  'willChange',
   'overflow',
   'overflowX',
   'overflowY',
@@ -458,6 +498,11 @@ CONTENT
 - size_guide: editable size rows only (no invented measurements).
 - whatsapp: WhatsApp chat button. props: phone, greeting, position.
 - shipping: pincode / COD checker. Do not invent availability.
+- product_price: live product price (with optional compare-at). Bind product via resourcePicker (product_id). props: compareAt, showCompareAt.
+- product_badge: live product badge (sale, new, low-stock). Bind product via resourcePicker. props: text, tone (sale|new|low_stock|custom).
+- variant_selector: live variant/option picker for a product. props: option, layout.
+- quantity_selector: numeric quantity stepper bound to Add to Cart. props: min, max, step.
+- product_gallery: live multi-image gallery with thumbnails. props: layout, thumbPosition, showThumbs.
 
 SETTINGS TYPES (schema only): text, richtext, image, video, color, font, select, toggle, number, link, resourcePicker, datetime.
 

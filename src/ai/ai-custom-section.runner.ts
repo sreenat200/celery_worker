@@ -88,7 +88,27 @@ export class AiCustomSectionRunner implements OnModuleInit, OnModuleDestroy {
     if (job.name === 'generate-custom-section') {
       return this.handleGenerateSection(job);
     }
+    if (job.name === 'refine-custom-section') {
+      return this.handleRefineSection(job);
+    }
     throw new UnrecoverableError(`Unknown job name on custom-section queue: ${job.name}`);
+  }
+
+  private async setProgress(job: Job, sectionId: number, value: number) {
+    const clamped = Math.max(0, Math.min(100, Math.round(value)));
+    try {
+      await job.updateProgress(clamped);
+    } catch {
+      /* queue progress is best-effort */
+    }
+    try {
+      await this.prisma.ai_custom_section.update({
+        where: { id: sectionId },
+        data: { progress: clamped },
+      });
+    } catch {
+      /* progress persistence is best-effort */
+    }
   }
 
   private async handleGenerateSection(job: Job): Promise<any> {
@@ -107,8 +127,10 @@ export class AiCustomSectionRunner implements OnModuleInit, OnModuleDestroy {
     }
 
     out(`job=${job.id} section=${sectionId} store=${storeId} attempt=${job.attemptsMade + 1}`);
+    await this.setProgress(job, sectionId, 5);
     const plan = planSectionLayout(String(userPrompt || ''));
     const style = planSectionStyle(String(userPrompt || ''));
+    await this.setProgress(job, sectionId, 20);
     const promptText = String(userPrompt || '');
     const useTestimonials = /\btestimonials?\b/i.test(promptText);
     const useFaq = isFaqPrompt(promptText);
@@ -229,6 +251,7 @@ export class AiCustomSectionRunner implements OnModuleInit, OnModuleDestroy {
         ],
         { maxTokens, jsonMode: true, temperature: 0.2, disableThinking: true },
       );
+      await this.setProgress(job, sectionId, 60);
     } catch (err: any) {
       const transient = err instanceof DeepSeekInferenceError ? err.isTransient : true;
       const message = err?.message || 'DeepSeek inference failed';
@@ -248,6 +271,7 @@ export class AiCustomSectionRunner implements OnModuleInit, OnModuleDestroy {
       validated.defaultSettings = applyExtractedStyle(validated.defaultSettings || {}, style.settings);
       validated = await this.bindStoreProducts(validated, Number(storeId), String(userPrompt || ''));
       await validateStoreResources(this.prisma, Number(storeId), validated.defaultSettings || {});
+      await this.setProgress(job, sectionId, 90);
     } catch (err: any) {
       const details =
         err instanceof AiSectionValidationError && err.details.length
@@ -277,6 +301,69 @@ export class AiCustomSectionRunner implements OnModuleInit, OnModuleDestroy {
       await this.markSectionFailed(sectionId, 'DB_ERROR', errMsg);
       throw err;
     }
+  }
+
+  private async handleRefineSection(job: Job): Promise<any> {
+    const { sectionId, storeId, userPrompt, followUpPrompt } = job.data;
+    const existing = await this.prisma.ai_custom_section.findUnique({
+      where: { id: sectionId },
+    });
+    if (!existing) {
+      throw new UnrecoverableError('Refine target section not found');
+    }
+    if (existing.store_id !== Number(storeId)) {
+      throw new UnrecoverableError('Store mismatch for refine job');
+    }
+    const currentBlueprint = existing.blueprint || (existing as any).versions?.[0]?.blueprint;
+    if (!currentBlueprint) {
+      await this.markSectionFailed(sectionId, 'NO_BLUEPRINT', 'No existing blueprint to refine');
+      throw new UnrecoverableError('No existing blueprint to refine');
+    }
+
+    await this.setProgress(job, sectionId, 20);
+
+    const systemPrompt = `You are an expert ecommerce storefront section designer.
+The merchant wants you to refine an EXISTING AI-generated section. Return the full, updated
+AiSectionBlueprint JSON object (name, schema, defaultSettings, layout) that reflects the
+requested change while preserving all unrelated structure, content, and settings.
+
+RULES
+- Keep the same component registry and {{settings.field}} binding style.
+- Only output valid JSON. No markdown. No HTML/CSS/JS.
+- Do not invent product/collection IDs.`;
+    const userPromptContent = `Original prompt:\n${String(userPrompt || '')}\n\nRefinement request:\n${String(followUpPrompt || '')}\n\nCurrent blueprint (edit this JSON):\n${JSON.stringify(currentBlueprint)}`;
+
+    let rawResponse: string;
+    try {
+      rawResponse = await this.deepSeek.generateChat(
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPromptContent },
+        ],
+        { maxTokens: 8192, jsonMode: true, temperature: 0.2, disableThinking: true },
+      );
+      await this.setProgress(job, sectionId, 60);
+    } catch (err: any) {
+      const transient = err instanceof DeepSeekInferenceError ? err.isTransient : true;
+      await this.markSectionFailed(sectionId, transient ? 'DEEPSEEK_ERROR' : 'DEEPSEEK_FATAL', err?.message || 'DeepSeek inference failed');
+      if (!transient) throw new UnrecoverableError(err?.message || 'DeepSeek inference failed');
+      throw err;
+    }
+
+    let validated: any;
+    try {
+      validated = validateAiSectionBlueprint(rawResponse);
+      validated = await this.bindStoreProducts(validated, Number(storeId), String(userPrompt || ''));
+      await validateStoreResources(this.prisma, Number(storeId), validated.defaultSettings || {});
+      await this.setProgress(job, sectionId, 90);
+    } catch (err: any) {
+      const code = err instanceof AiSectionValidationError ? err.code : 'VALIDATION_ERROR';
+      await this.markSectionFailed(sectionId, code, err?.message || 'Refine validation failed');
+      throw new UnrecoverableError(err?.message || 'Refine validation failed');
+    }
+
+    await this.saveBlueprint(sectionId, validated, this.deepSeek.getModel());
+    return { success: true, model: this.deepSeek.getModel(), name: validated.name, plan: 'refine' };
   }
 
   private layoutHasType(node: any, type: string): boolean {
@@ -400,6 +487,7 @@ export class AiCustomSectionRunner implements OnModuleInit, OnModuleDestroy {
         where: { id: sectionId },
         data: {
           status: 'completed',
+          progress: 100,
           name: String(validated.name || 'Custom Section').slice(0, 255),
           model_name: modelName,
           blueprint: validated as any,

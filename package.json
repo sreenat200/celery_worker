@@ -8,7 +8,7 @@
     "start": "node dist/main.js",
     "start:prod": "node dist/main.js",
     "start:dev": "ts-node src/main.ts",
-    "test": "node -r ts-node/register --test src/ai/ai-section-builder.test.ts",
+    "test": "node -r ts-node/register --test src/ai/ai-section-builder.test.ts src/ai/page-builder.test.ts",
     "postinstall": "prisma generate || true"
   },
   "dependencies": {

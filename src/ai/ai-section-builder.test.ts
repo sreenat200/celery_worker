@@ -9,6 +9,7 @@ import { composeBlueprint, shouldCompose } from './ai-section-compose';
 import { collectResourceRefs } from './ai-section-resources';
 import { isFaqPrompt, isLuxuryComboPrompt, isRepeatingRowsPrompt, isSimpleBannerPrompt, synthesizeFaqBlueprint, synthesizeLuxuryComboBlueprint, synthesizeRepeatingRowsBlueprint, synthesizeSimpleBannerBlueprint } from './ai-section-synthesize';
 import { planSectionStyle } from './ai-section-style-planner';
+import { evaluateTemplate, evaluateCondition, resolveRepeaterItems, resolvePath } from './expression';
 
 const shared = JSON.parse(
   readFileSync(join(__dirname, '../../../shared/ai-section-registry.json'), 'utf8'),
@@ -283,5 +284,108 @@ describe('resource refs', () => {
     const refs = collectResourceRefs({ product_1: '12', collection_id: '4', tab_2_collection_id: '9', collection_3: '11', heading: 'Hi' });
     assert.deepEqual(refs.products, ['12']);
     assert.deepEqual(refs.collections.sort(), ['11', '4', '9']);
+  });
+});
+
+describe('universal AST v2.0', () => {
+  it('validates deeply nested hierarchies with responsive + hover/active styles', () => {
+    const bp = validateAiSectionBlueprint(JSON.stringify({
+      name: 'Nested',
+      category: 'commerce',
+      description: 'deep tree',
+      version: '2.0',
+      schema: { heading: { type: 'text', label: 'Heading', default: 'Hi' } },
+      defaultSettings: { heading: 'Hi' },
+      layout: {
+        type: 'container',
+        style: { desktop: { padding: '48px' }, tablet: { padding: '40px' }, mobile: { padding: '24px' } },
+        children: [
+          {
+            type: 'row',
+            children: [
+              { type: 'column', children: [{ type: 'heading', props: { content: '{{settings.heading}}' } }, { type: 'button', style: { desktop: { backgroundColor: '#0F172A' }, hover: { backgroundColor: '#F59E0B' }, active: { transform: 'scale(0.98)' } } }] },
+              { type: 'grid', children: [{ type: 'product_price', props: { product_id: '' } }, { type: 'product_badge', props: { tone: 'sale' } }] },
+            ],
+          },
+        ],
+      },
+    }));
+    const row = bp.layout.children[0];
+    assert.equal(row.children[0].children[1].style.hover.backgroundColor, '#F59E0B');
+    assert.equal(row.children[0].children[1].style.active.transform, 'scale(0.98)');
+    assert.equal(bp.category, 'commerce');
+    assert.equal(bp.version, '2.0');
+  });
+
+  it('preserves repeater, condition, bindings, and events', () => {
+    const bp = validateAiSectionBlueprint(JSON.stringify({
+      name: 'Repeater',
+      schema: {},
+      defaultSettings: { reviews: [{ name: 'A', stars: 5 }] },
+      layout: {
+        type: 'container',
+        children: [
+          {
+            type: 'grid',
+            repeater: { itemsSource: 'settings.reviews', itemAlias: 'review', indexAlias: 'i', limit: 6 },
+            children: [
+              { type: 'heading', condition: 'review.stars >= 4', bindings: { content: '{{review.name}}' }, props: {} },
+              { type: 'button', events: { onClick: 'addToCart', payload: { product_id: '{{product.id}}' } }, props: { label: 'Buy' } },
+            ],
+          },
+        ],
+      },
+    }));
+    const grid = bp.layout.children[0];
+    assert.equal(grid.repeater.itemsSource, 'settings.reviews');
+    assert.equal(grid.repeater.itemAlias, 'review');
+    assert.equal(grid.repeater.limit, 6);
+    assert.equal(grid.children[0].condition, 'review.stars >= 4');
+    assert.equal(grid.children[0].bindings.content, '{{review.name}}');
+    assert.equal(grid.children[1].events.onClick, 'addToCart');
+  });
+
+  it('rejects unsafe condition expressions', () => {
+    assert.throws(() => validateAiSectionBlueprint(JSON.stringify({
+      name: 'X',
+      schema: {},
+      defaultSettings: {},
+      layout: { type: 'container', children: [{ type: 'heading', condition: '1 <script>' }] },
+    })), AiSectionValidationError);
+  });
+});
+
+describe('expression engine', () => {
+  const ctx = {
+    settings: { heading: 'Hello', subheading: '', price: 12.5 },
+    product: { title: 'Necklace', price: 42, available: true },
+    cart: { item_count: 3 },
+  };
+
+  it('interpolates scoped paths', () => {
+    assert.equal(evaluateTemplate('{{product.title}}', ctx), 'Necklace');
+    assert.equal(evaluateTemplate('{{settings.heading}}', ctx), 'Hello');
+    assert.equal(resolvePath('cart.item_count', ctx), 3);
+  });
+
+  it('applies fallback chains and formatters', () => {
+    assert.equal(evaluateTemplate("{{settings.subheading || 'Default'}}", ctx), 'Default');
+    assert.equal(evaluateTemplate('{{product.price | currency}}', ctx), '$42.00');
+    assert.equal(evaluateTemplate('{{product.title | uppercase}}', ctx), 'NECKLACE');
+    assert.equal(evaluateTemplate('{{settings.heading | lowercase}}', ctx), 'hello');
+  });
+
+  it('evaluates conditions safely', () => {
+    assert.equal(evaluateCondition('cart.item_count > 0', ctx), true);
+    assert.equal(evaluateCondition('product.available == true && cart.item_count >= 3', ctx), true);
+    assert.equal(evaluateCondition('product.price > 100', ctx), false);
+    assert.equal(evaluateCondition('settings.subheading', ctx), false);
+    assert.equal(evaluateCondition('', ctx), true);
+  });
+
+  it('resolves repeater item sources', () => {
+    const c = { settings: { reviews: [{ n: 'A' }, { n: 'B' }, { n: 'C' }] } };
+    assert.equal(resolveRepeaterItems('settings.reviews', c).length, 3);
+    assert.deepEqual(resolveRepeaterItems('settings.missing', c), []);
   });
 });
