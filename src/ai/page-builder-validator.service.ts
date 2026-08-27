@@ -17,6 +17,7 @@ import {
   ALLOWED_STYLE_PROPERTIES,
 } from './ai-section-component-registry';
 import { validateStoreResources } from './ai-section-resources';
+import { walkAst } from './ast-walker';
 import {
   getAllowedSectionsForPageType,
   type PageType,
@@ -143,7 +144,91 @@ export class PageBuilderValidator {
       return this.buildFallbackBlueprint(userPrompt, resolvedPageType);
     }
 
+    const quality = this.styleQualityCheck(result.data as PageBlueprint);
+    if (quality.warnings.length) {
+      for (const w of quality.warnings) this.logger.warn(`[style-quality] ${w}`);
+    }
+    if (quality.errors.length) {
+      for (const e of quality.errors) this.logger.error(`[style-quality] ${e}`);
+      return this.buildFallbackBlueprint(userPrompt, resolvedPageType);
+    }
+
     return result.data as PageBlueprint;
+  }
+
+  private toPx(value: unknown): number | null {
+    if (typeof value === 'number') return value;
+    if (typeof value === 'string') {
+      const px = value.trim().match(/^(-?\d+(?:\.\d+)?)px$/);
+      if (px) return parseFloat(px[1]);
+      const rem = value.trim().match(/^(-?\d+(?:\.\d+)?)rem$/);
+      if (rem) return parseFloat(rem[1]) * 16;
+    }
+    return null;
+  }
+
+  private styleQualityCheck(blueprint: PageBlueprint): { warnings: string[]; errors: string[] } {
+    const warnings: string[] = [];
+    const errors: string[] = [];
+
+    for (const section of blueprint.sections) {
+      if (!section.layout || typeof section.layout !== 'object') continue;
+      walkAst(section.layout as any, (node: any, path: string) => {
+        const desktop = node.style?.desktop || {};
+
+        if (node.type === 'container' && path === 'root') {
+          const pad = this.toPx(desktop.padding);
+          if (pad !== null && (pad < 48 || pad > 96)) {
+            warnings.push(`${path}: section padding ${pad}px outside 48-96px`);
+          }
+        }
+
+        if (node.type === 'text') {
+          const fs = this.toPx(desktop.fontSize);
+          if (fs !== null && (fs < 14 || fs > 18)) {
+            warnings.push(`${path}: body font-size ${fs}px outside 14-18px`);
+          }
+        }
+
+        if (node.type === 'heading') {
+          const fw = Number(desktop.fontWeight);
+          if (Number.isFinite(fw) && (fw < 400 || fw > 700)) {
+            warnings.push(`${path}: heading font-weight ${fw} outside 400-700`);
+          }
+        }
+
+        if (desktop.borderRadius !== undefined) {
+          const r = this.toPx(desktop.borderRadius);
+          if (r !== null && r > 16) {
+            warnings.push(`${path}: border-radius ${r}px exceeds 16px`);
+          }
+        }
+
+        if (node.type === 'button') {
+          const mh = this.toPx(desktop.minHeight);
+          if (mh !== null && mh < 40) {
+            warnings.push(`${path}: button min-height ${mh}px below 40px`);
+          }
+        }
+
+        if (node.type === 'grid') {
+          const gap = this.toPx(desktop.gap);
+          if (gap !== null && (gap < 8 || gap > 48)) {
+            warnings.push(`${path}: grid gap ${gap}px outside 8-48px`);
+          }
+        }
+
+        if (node.type === 'text' || node.type === 'heading') {
+          const fs = this.toPx(desktop.fontSize);
+          if (fs !== null && fs < 14) {
+            const isEyebrow = node.type === 'text' && (desktop.textTransform === 'uppercase' || desktop.letterSpacing === '0.08em');
+            if (!isEyebrow) errors.push(`${path}: font-size ${fs}px below 14px`);
+          }
+        }
+      });
+    }
+
+    return { warnings, errors };
   }
 
   private sanitizeStyle(style: unknown): Record<string, Record<string, string | number>> | undefined {

@@ -26,6 +26,7 @@ import { composeBlueprint, shouldCompose } from './ai-section-compose';
 import { buildCustomSectionSystemPrompt, buildCustomSectionUserPrompt } from './ai-section-prompt';
 import { AiSectionValidationError, validateAiSectionBlueprint } from './ai-section-validator';
 import { validateStoreResources } from './ai-section-resources';
+import { polishBlueprint } from './style-polisher';
 
 function out(msg: string) {
   process.stdout.write(`${new Date().toISOString()} [custom-section-worker] ${msg}\n`);
@@ -482,21 +483,22 @@ RULES
   }
 
   private async saveBlueprint(sectionId: number, validated: any, modelName: string) {
+    const polished = polishBlueprint(validated);
     await this.prisma.$transaction(async (tx) => {
       await tx.ai_custom_section.update({
         where: { id: sectionId },
         data: {
           status: 'completed',
           progress: 100,
-          name: String(validated.name || 'Custom Section').slice(0, 255),
+          name: String(polished.name || 'Custom Section').slice(0, 255),
           model_name: modelName,
-          blueprint: validated as any,
+          blueprint: polished as any,
           error_code: null,
           error_message: null,
         },
       });
       await tx.ai_custom_section_version.create({
-        data: { section_id: sectionId, blueprint: validated as any },
+        data: { section_id: sectionId, blueprint: polished as any },
       });
     });
   }

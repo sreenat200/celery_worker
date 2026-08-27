@@ -30,6 +30,51 @@ VISUAL QUALITY
 - Root container maxWidth 1200px, width 100%, boxSizing border-box.
 - Media and columns: minWidth 0, maxWidth 100%.
 
+STYLE GUIDELINES (CRITICAL - FOLLOW STRICTLY):
+
+Typography:
+- Heading font-weight: 500-600 (NEVER 700+)
+- Body font-size: 15-16px
+- Heading line-height: 1.2-1.3
+- Body line-height: 1.5-1.6
+- Large headings (24px+): letter-spacing: -0.02em
+- Eyebrow/caption: uppercase, letter-spacing: 0.08em, 12px
+
+Spacing:
+- Section padding: 64-80px desktop, 40px mobile
+- Card padding: 24px
+- Grid gap: 24-32px desktop, 16px mobile
+- Use 8px spacing scale: 4, 8, 12, 16, 24, 32, 48, 64, 96
+
+Cards:
+- border-radius: 8px
+- box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1)
+- hover: translateY(-2px), stronger shadow
+- image aspect-ratio: 1:1 products, 4:3 features, 16:9 banners
+
+Buttons:
+- min-height: 44px
+- padding: 12px 28px
+- border-radius: 8px
+- font-weight: 600
+- Primary: solid dark background, white text
+- Secondary: transparent with 1px border
+- hover: opacity 0.85, translateY(-1px)
+
+Responsive:
+- Mobile: 1 column, 40px padding, font-size 60% of desktop
+- Tablet: 2 columns
+- Desktop: as specified
+
+EXAMPLE 1 - Premium Hero:
+{"type":"container","style":{"desktop":{"maxWidth":"1200px","margin":"0 auto","padding":"80px 24px"}},"children":[{"type":"heading","props":{"content":"Craftsmanship Redefined","variant":"h1"},"style":{"desktop":{"fontSize":"56px","fontWeight":"600","letterSpacing":"-0.02em","lineHeight":"1.2","color":"#0F172A"},"mobile":{"fontSize":"32px"}}}]}
+
+EXAMPLE 2 - Premium Product Card:
+{"type":"container","style":{"desktop":{"borderRadius":"8px","boxShadow":"0 4px 6px -1px rgba(0,0,0,0.1)","padding":"24px","backgroundColor":"#FFFFFF"},"hover":{"transform":"translateY(-2px)","boxShadow":"0 8px 12px -2px rgba(0,0,0,0.12)"}}}
+
+EXAMPLE 3 - Premium Button:
+{"type":"button","props":{"label":"Shop Now","link":"#shop"},"style":{"desktop":{"backgroundColor":"#0F172A","color":"#FFFFFF","padding":"12px 28px","borderRadius":"8px","fontWeight":"600","minHeight":"44px"},"hover":{"opacity":"0.85","transform":"translateY(-1px)"}}}
+
 SETTINGS
 - Emit a SMALL schema: only content fields (heading, text, image, button_text, button_link, faq_1_q, faq_1_a). Do NOT emit select options, chrome, array, list, or style field definitions.
 - Never use setting type "array". FAQ must be accordion + accordion_item with faq_N_q / faq_N_a text fields.

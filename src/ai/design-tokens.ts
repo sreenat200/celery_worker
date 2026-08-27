@@ -1,13 +1,13 @@
 /**
- * Premium design token system — single source of truth for AI-generated
- * section defaults and Inspector capability panels.
+ * Premium design token system — the single source of truth for AI-generated
+ * section/page defaults and Inspector capability panels.
  *
- * Mirrors `shared/design-tokens.json`. Kept as a TS module so renderers,
- * the style planner, and validators share the exact same values without
- * runtime JSON parsing.
+ * Mirrors the canonical `shared/design-tokens.ts` (kept in-package to respect
+ * per-package tsconfig rootDir boundaries).
  */
+
 export const DESIGN_TOKENS = {
-  color: {
+  colors: {
     primary: '#0F172A',
     secondary: '#475569',
     accent: '#F59E0B',
@@ -17,6 +17,36 @@ export const DESIGN_TOKENS = {
     text_secondary: '#475569',
     text_inverse: '#FFFFFF',
     border: '#E2E8F0',
+    success: '#10B981',
+    warning: '#F59E0B',
+    error: '#EF4444',
+  },
+  typography: {
+    heading_font: 'Inter, system-ui, sans-serif',
+    body_font: 'Inter, system-ui, sans-serif',
+    scale: {
+      display_large: { size: '4rem', line_height: '1.1', weight: '700' },
+      display_medium: { size: '3rem', line_height: '1.2', weight: '700' },
+      heading_1: { size: '2.25rem', line_height: '1.3', weight: '600' },
+      heading_2: { size: '1.75rem', line_height: '1.35', weight: '600' },
+      heading_3: { size: '1.375rem', line_height: '1.4', weight: '500' },
+      body_large: { size: '1.125rem', line_height: '1.6', weight: '400' },
+      body: { size: '1rem', line_height: '1.6', weight: '400' },
+      body_small: { size: '0.875rem', line_height: '1.5', weight: '400' },
+      caption: { size: '0.75rem', line_height: '1.4', weight: '400' },
+    },
+  },
+  spacing: {
+    xs: '0.25rem',
+    sm: '0.5rem',
+    md: '1rem',
+    lg: '1.5rem',
+    xl: '2rem',
+    '2xl': '3rem',
+    '3xl': '4rem',
+    '4xl': '6rem',
+    default_section_padding: '4rem',
+    default_card_padding: '1.5rem',
   },
   shadows: {
     sm: '0 1px 2px rgba(0,0,0,0.05)',
@@ -25,7 +55,7 @@ export const DESIGN_TOKENS = {
     xl: '0 20px 25px -5px rgba(0,0,0,0.1)',
     hover: '0 8px 12px -2px rgba(0,0,0,0.12)',
   },
-  radius: {
+  border_radius: {
     sm: '0.25rem',
     md: '0.5rem',
     lg: '0.75rem',
@@ -33,16 +63,16 @@ export const DESIGN_TOKENS = {
     full: '9999px',
   },
   transitions: {
-    fast: '150ms',
-    normal: '250ms',
-    slow: '400ms',
+    fast: '150ms ease-in-out',
+    normal: '250ms ease-in-out',
+    slow: '400ms ease-in-out',
   },
 } as const;
 
 export type DesignTokenShadow = keyof typeof DESIGN_TOKENS.shadows;
-export type DesignTokenRadius = keyof typeof DESIGN_TOKENS.radius;
+export type DesignTokenRadius = keyof typeof DESIGN_TOKENS.border_radius;
+export type DesignTokenTransition = keyof typeof DESIGN_TOKENS.transitions;
 
-/** Human-friendly shadow picker options for the Inspector. */
 export const SHADOW_OPTIONS = [
   { label: 'None', value: 'none' },
   { label: 'Small', value: 'sm' },
@@ -62,15 +92,15 @@ export const RADIUS_OPTIONS = [
 export const HOVER_EFFECT_OPTIONS = [
   { label: 'None', value: 'none' },
   { label: 'Lift', value: 'lift' },
-  { label: 'Zoom image', value: 'zoom' },
+  { label: 'Zoom', value: 'zoom' },
   { label: 'Shadow', value: 'shadow' },
-  { label: 'Glass', value: 'glass' },
+  { label: 'Glow', value: 'glow' },
 ] as const;
 
 export const ANIMATION_SPEED_OPTIONS = [
-  { label: 'Fast (150ms)', value: '150ms' },
-  { label: 'Normal (250ms)', value: '250ms' },
-  { label: 'Slow (400ms)', value: '400ms' },
+  { label: 'Fast (150ms)', value: 'fast' },
+  { label: 'Normal (250ms)', value: 'normal' },
+  { label: 'Slow (400ms)', value: 'slow' },
 ] as const;
 
 export function resolveShadowToken(value: string | undefined | null): string {
@@ -87,11 +117,15 @@ export function resolveShadowToken(value: string | undefined | null): string {
 export function resolveRadiusToken(value: string | undefined | null): string {
   if (!value) return '';
   const v = String(value);
-  if (/^\d+(\.\d+)?(px)?$/.test(v)) return /px$/.test(v) ? v : `${v}px`;
-  return DESIGN_TOKENS.radius[v as DesignTokenRadius] || '';
+  if (/^\d+(\.\d+)?(px|rem)?$/.test(v)) return v;
+  return DESIGN_TOKENS.border_radius[v as DesignTokenRadius] || '';
 }
 
-/** Node-level capability panel definitions shared with the Inspector. */
+export function resolveTransitionToken(value: string | undefined | null): string {
+  if (!value) return DESIGN_TOKENS.transitions.normal;
+  return DESIGN_TOKENS.transitions[value as DesignTokenTransition] || String(value);
+}
+
 export const NODE_CAPABILITY_PANELS = [
   'Dimension & Spacing',
   'Flex/Grid Layout',

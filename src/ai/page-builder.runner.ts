@@ -10,6 +10,8 @@ import {
 } from '../jobs/bullmq.constants';
 import { DeepSeekService } from './deepseek.service';
 import { PageBuilderValidator } from './page-builder-validator.service';
+import { polishBlueprint } from './style-polisher';
+import { getBaselinesPromptContext } from './premium-baselines';
 import { getSectionSchemaPromptContext } from './theme-sections.schema';
 import {
   derivePageType,
@@ -131,11 +133,13 @@ export class PageBuilderRunner implements OnModuleInit, OnModuleDestroy {
 
     await this.setProgress(job, 60);
 
-    const blueprint = await this.validator.validateAndFormatBlueprint(
-      rawResponse,
-      Number(storeId),
-      userPrompt,
-      pageType,
+    const blueprint = polishBlueprint(
+      await this.validator.validateAndFormatBlueprint(
+        rawResponse,
+        Number(storeId),
+        userPrompt,
+        pageType,
+      ),
     );
 
     await this.setProgress(job, 100);
@@ -185,11 +189,13 @@ export class PageBuilderRunner implements OnModuleInit, OnModuleDestroy {
 
     await this.setProgress(job, 60);
 
-    const blueprint = await this.validator.validateAndFormatBlueprint(
-      rawResponse,
-      Number(storeId),
-      String(userPrompt || followUpPrompt),
-      pageType,
+    const blueprint = polishBlueprint(
+      await this.validator.validateAndFormatBlueprint(
+        rawResponse,
+        Number(storeId),
+        String(userPrompt || followUpPrompt),
+        pageType,
+      ),
     );
 
     await this.setProgress(job, 100);
@@ -220,6 +226,9 @@ ${allowedBlock}
 
 Available Section Types & Settings:
 ${sectionsJson}
+
+AVAILABLE COMPOSABLE BASELINES (use as starting skeletons; fill with merchant-specific content):
+${getBaselinesPromptContext()}
 
 Composition Rules:
 - Choose the RIGHT number of sections for this request (typically 3 to 10). Do NOT force a fixed count.
@@ -268,6 +277,9 @@ ${allowedBlock}
 
 Available Section Types & Settings:
 ${sectionsJson}
+
+AVAILABLE COMPOSABLE BASELINES (use as starting skeletons; fill with merchant-specific content):
+${getBaselinesPromptContext()}
 
 Current blueprint (edit this — preserve unrelated sections and settings):
 ${current ? JSON.stringify(current) : '{}'}
