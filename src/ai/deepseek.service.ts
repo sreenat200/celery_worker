@@ -147,7 +147,7 @@ export class DeepSeekService {
 
       const usage = data?.usage || {};
       this.logger.log(
-        `DeepSeek ok model=${model} prompt_tokens=${usage.prompt_tokens || 0} completion_tokens=${usage.completion_tokens || 0} total_tokens=${usage.total_tokens || 0}`,
+        `DeepSeek ok model=${model} prompt_tokens=${usage.prompt_tokens || 0} completion_tokens=${usage.completion_tokens || 0} total_tokens=${usage.total_tokens || 0} finish=${finishReason || 'n/a'}`,
       );
 
       if (content) {

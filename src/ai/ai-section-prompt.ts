@@ -4,6 +4,9 @@ import type { SectionStylePlan } from './ai-section-style-planner';
 export function buildCustomSectionSystemPrompt(): string {
   return `You are an expert ecommerce storefront section designer.
 Convert the merchant's request into ONE compact AiSectionBlueprint JSON object.
+Prefer also including a "universal" object: a Theme Editor section of a registered type
+with independently editable blocks (heading, text, image, button, row, grid, faq_item, testimonial, product_card, …).
+Never output executable React, HTML scripts, or unregistered component types.
 
 PROCESS (follow in order)
 1. Understand the requested purpose, layout direction, components, content hierarchy, alignment, desktop/mobile behavior, visual style, and explicit constraints.

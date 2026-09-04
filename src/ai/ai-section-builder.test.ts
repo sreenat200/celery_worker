@@ -7,7 +7,8 @@ import { validateAiSectionBlueprint, AiSectionValidationError } from './ai-secti
 import { planSectionLayout } from './ai-section-layout-planner';
 import { composeBlueprint, shouldCompose } from './ai-section-compose';
 import { collectResourceRefs } from './ai-section-resources';
-import { isFaqPrompt, isLuxuryComboPrompt, isRepeatingRowsPrompt, isSimpleBannerPrompt, synthesizeFaqBlueprint, synthesizeLuxuryComboBlueprint, synthesizeRepeatingRowsBlueprint, synthesizeSimpleBannerBlueprint } from './ai-section-synthesize';
+import { isFaqPrompt, isLuxuryComboPrompt, isRepeatingRowsPrompt, isSimpleBannerPrompt, synthesizeFaqBlueprint, synthesizeLuxuryComboBlueprint, synthesizeRepeatingRowsBlueprint, synthesizeSimpleBannerBlueprint, synthesizeTestimonialBlueprint } from './ai-section-synthesize';
+import { blueprintToUniversal, validateUniversalSection, UNIVERSAL_BLOCK_TYPES } from './ai-section-universal';
 import { planSectionStyle } from './ai-section-style-planner';
 import { evaluateTemplate, evaluateCondition, resolveRepeaterItems, resolvePath } from './expression';
 
@@ -387,5 +388,58 @@ describe('expression engine', () => {
     const c = { settings: { reviews: [{ n: 'A' }, { n: 'B' }, { n: 'C' }] } };
     assert.equal(resolveRepeaterItems('settings.reviews', c).length, 3);
     assert.deepEqual(resolveRepeaterItems('settings.missing', c), []);
+  });
+});
+
+describe('universal section + block conversion', () => {
+  const style = planSectionStyle('luxury editorial gold');
+
+  it('maps FAQ prompt to faq + faq_item blocks', () => {
+    const bp = synthesizeFaqBlueprint('Create an FAQ accordion', style);
+    const u = blueprintToUniversal('Create an FAQ accordion with multiple independently editable questions and answers.', bp);
+    assert.equal(u.type, 'faq');
+    assert.ok(u.blocks.length >= 3);
+    assert.ok(u.blocks.every((b) => b.type === 'faq_item' && b.id && b.settings.q));
+  });
+
+  it('maps testimonials to testimonial blocks', () => {
+    const bp = synthesizeTestimonialBlueprint('Create a testimonial section', style);
+    const u = blueprintToUniversal('Create a testimonial section with multiple independently editable testimonial blocks.', bp);
+    assert.equal(u.type, 'testimonials');
+    assert.ok(u.blocks.length >= 2);
+    assert.ok(u.blocks.every((b) => b.type === 'testimonial' && b.id));
+  });
+
+  it('maps repeating image/text rows to nested row blocks', () => {
+    const bp = synthesizeRepeatingRowsBlueprint('Create four independent image and text rows', style);
+    const u = blueprintToUniversal('Create four independent image and text rows, each with its own heading, description, image and CTA.', bp);
+    assert.equal(u.type, 'ai_custom');
+    assert.ok(u.blocks.length >= 4);
+    assert.ok(u.blocks.every((b) => UNIVERSAL_BLOCK_TYPES.has(b.type)));
+    const hasKids = u.blocks.some((b) => (b.children || []).some((c) => ['heading', 'text', 'button', 'image'].includes(c.type)));
+    assert.ok(hasKids);
+  });
+
+  it('maps simple banner/hero without inventing types', () => {
+    const bp = synthesizeSimpleBannerBlueprint('Create a luxury fashion hero', style);
+    const u = blueprintToUniversal('Create a luxury fashion hero with image, heading, description and Shop Now button.', bp);
+    assert.ok(['hero', 'ai_custom', 'image_banner'].includes(u.type));
+    assert.ok(u.blocks.every((b) => UNIVERSAL_BLOCK_TYPES.has(b.type) && b.id));
+  });
+
+  it('rejects unregistered section types', () => {
+    assert.throws(() =>
+      validateUniversalSection({
+        id: 'x',
+        type: 'not-a-section',
+        settings: {},
+        styles: {},
+        responsive: {},
+        blocks: [],
+        children: [],
+        binding: {},
+        metadata: {},
+      }),
+    );
   });
 });

@@ -48,11 +48,46 @@ function extractJsonObject(raw: string): unknown {
   cleaned = cleaned.replace(/[\u201C\u201D]/g, '"').replace(/[\u2018\u2019]/g, "'");
   cleaned = stripTrailingCommas(cleaned);
 
-  const parsed = tryParseJson(cleaned) ?? tryParseJson(sliceFirstObject(cleaned)) ?? parseSequentialObjects(cleaned);
+  const parsed =
+    tryParseJson(cleaned) ??
+    tryParseJson(sliceFirstObject(cleaned)) ??
+    parseSequentialObjects(cleaned) ??
+    tryParseJson(repairTruncatedJson(cleaned) || '');
   if (parsed == null) {
     throw new AiSectionValidationError('AI output is not valid JSON', 'INVALID_JSON');
   }
   return parsed;
+}
+
+/** Close unclosed strings/braces when the model hits the token cap. */
+function repairTruncatedJson(text: string): string | null {
+  const start = text.indexOf('{');
+  if (start < 0) return null;
+  let cleaned = text.slice(start);
+  let inString = false;
+  let escaped = false;
+  const stack: string[] = [];
+  for (let i = 0; i < cleaned.length; i += 1) {
+    const ch = cleaned[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === '{') stack.push('}');
+    else if (ch === '[') stack.push(']');
+    else if ((ch === '}' || ch === ']') && stack.length && stack[stack.length - 1] === ch) stack.pop();
+  }
+  let repaired = cleaned;
+  if (inString) repaired += '"';
+  repaired = repaired.replace(/,\s*$/, '');
+  while (stack.length) repaired += stack.pop();
+  return tryParseJson(stripTrailingCommas(repaired)) ? stripTrailingCommas(repaired) : null;
 }
 
 function tryParseJson(text: string): unknown | null {

@@ -27,6 +27,7 @@ import { buildCustomSectionSystemPrompt, buildCustomSectionUserPrompt } from './
 import { AiSectionValidationError, validateAiSectionBlueprint } from './ai-section-validator';
 import { validateStoreResources } from './ai-section-resources';
 import { polishBlueprint } from './style-polisher';
+import { blueprintToUniversal } from './ai-section-universal';
 
 function out(msg: string) {
   process.stdout.write(`${new Date().toISOString()} [custom-section-worker] ${msg}\n`);
@@ -155,7 +156,7 @@ export class AiCustomSectionRunner implements OnModuleInit, OnModuleDestroy {
       );
       const bound = await this.bindStoreProducts(validated, Number(storeId), promptText);
       await validateStoreResources(this.prisma, Number(storeId), bound.defaultSettings || {});
-      await this.saveBlueprint(sectionId, bound, 'planner');
+      await this.saveBlueprint(sectionId, bound, 'planner', promptText);
       return { success: true, model: 'planner', name: bound.name, plan: 'compose' };
     }
     if (useLuxuryCombo) {
@@ -241,10 +242,8 @@ export class AiCustomSectionRunner implements OnModuleInit, OnModuleDestroy {
 
     let rawResponse: string;
     try {
-      const promptChars = Math.min(700, String(userPrompt || '').trim().length);
-      const scaled = 4096 + Math.round(promptChars * 6);
-      const cap = Math.min(8192, Math.max(4096, parseInt(process.env.CUSTOM_SECTION_MAX_TOKENS || '8192', 10) || 8192));
-      const maxTokens = Math.min(cap, Math.max(4096, scaled));
+      const cap = Math.min(16384, Math.max(8192, parseInt(process.env.CUSTOM_SECTION_MAX_TOKENS || '8192', 10) || 8192));
+      const maxTokens = cap;
       rawResponse = await this.deepSeek.generateChat(
         [
           { role: 'system', content: systemPrompt },
@@ -281,11 +280,32 @@ export class AiCustomSectionRunner implements OnModuleInit, OnModuleDestroy {
       const code = err instanceof AiSectionValidationError ? err.code : 'VALIDATION_ERROR';
       const message = `${err.message}${details}`;
       this.logger.warn(`Rejecting invalid AI custom section output [${code}]: ${message}`);
-      await this.markSectionFailed(sectionId, code, message);
-      if (code === 'INVALID_JSON' && job.attemptsMade < 1) {
-        throw new DeepSeekInferenceError(message, 502, true);
+      if (code === 'INVALID_JSON') {
+        try {
+          const compact = await this.deepSeek.generateChat(
+            [
+              {
+                role: 'system',
+                content:
+                  'Return ONE complete JSON object only: {"name":"...","schema":{},"defaultSettings":{},"layout":{"type":"container","children":[]}}. Max 20 layout nodes. Close every brace. No markdown.',
+              },
+              { role: 'user', content: String(userPrompt || plan.purpose || 'hero banner') },
+            ],
+            { maxTokens: 4096, jsonMode: true, temperature: 0.1, disableThinking: true },
+          );
+          validated = validateAiSectionBlueprint(compact);
+          validated.defaultSettings = applyExtractedStyle(validated.defaultSettings || {}, style.settings);
+          validated = await this.bindStoreProducts(validated, Number(storeId), String(userPrompt || ''));
+          await validateStoreResources(this.prisma, Number(storeId), validated.defaultSettings || {});
+        } catch {
+          const synthesized = synthesizeSimpleBannerBlueprint(String(userPrompt || ''), style);
+          validated = validateAiSectionBlueprint(JSON.stringify(synthesized));
+          validated.defaultSettings = applyExtractedStyle(validated.defaultSettings || {}, style.settings);
+        }
+      } else {
+        await this.markSectionFailed(sectionId, code, message);
+        throw new UnrecoverableError(message);
       }
-      throw new UnrecoverableError(message);
     }
 
     try {
@@ -482,8 +502,23 @@ RULES
     return next;
   }
 
-  private async saveBlueprint(sectionId: number, validated: any, modelName: string) {
+  private async saveBlueprint(sectionId: number, validated: any, modelName: string, prompt?: string) {
     const polished = polishBlueprint(validated);
+    let promptText = prompt || '';
+    if (!promptText) {
+      const row = await this.prisma.ai_custom_section.findUnique({
+        where: { id: sectionId },
+        select: { prompt: true },
+      });
+      promptText = String(row?.prompt || '');
+    }
+    let packed: any = polished;
+    try {
+      const universal = blueprintToUniversal(promptText, polished);
+      packed = { ...polished, universal };
+    } catch (err: any) {
+      this.logger.warn(`Universal section conversion skipped: ${err?.message || err}`);
+    }
     await this.prisma.$transaction(async (tx) => {
       await tx.ai_custom_section.update({
         where: { id: sectionId },
@@ -492,13 +527,13 @@ RULES
           progress: 100,
           name: String(polished.name || 'Custom Section').slice(0, 255),
           model_name: modelName,
-          blueprint: polished as any,
+          blueprint: packed as any,
           error_code: null,
           error_message: null,
         },
       });
       await tx.ai_custom_section_version.create({
-        data: { section_id: sectionId, blueprint: polished as any },
+        data: { section_id: sectionId, blueprint: packed as any },
       });
     });
   }
